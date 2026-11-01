@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { apiUrl } from '../utils/api';
 
 export function UnverifiedBanner({ user, onResendVerification, onSimulatedVerify }) {
   const [resending, setResending] = useState(false);
@@ -14,7 +15,7 @@ export function UnverifiedBanner({ user, onResendVerification, onSimulatedVerify
     setResending(true);
     setResentSuccess(false);
     try {
-      const res = await fetch('/api/auth/resend-verification', {
+      const res = await fetch(apiUrl('/api/auth/resend-verification'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

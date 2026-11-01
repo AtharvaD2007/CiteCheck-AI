@@ -12,6 +12,7 @@ import { SavedReportsModal } from './components/SavedReportsModal';
 import { AboutModal } from './components/AboutModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { CheckCircle2, AlertCircle, Sparkles, Lock, ArrowRight, RotateCcw } from 'lucide-react';
+import { apiUrl } from './utils/api';
 
 export default function App() {
   const [health, setHealth] = useState(null);
@@ -59,7 +60,7 @@ export default function App() {
   // Fetch API Health & Model status
   const fetchHealth = useCallback(async () => {
     try {
-      const res = await fetch('/api/health');
+      const res = await fetch(apiUrl('/api/health'));
       if (res.ok) {
         const data = await res.json();
         setHealth(data);
@@ -81,7 +82,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch('/api/reports', {
+      const res = await fetch(apiUrl('/api/reports'), {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -104,7 +105,7 @@ export default function App() {
     if (!token) return;
 
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await fetch(apiUrl('/api/auth/me'), {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -121,7 +122,7 @@ export default function App() {
   const handleDirectVerifyToken = async (token) => {
     if (!token) return;
     try {
-      const res = await fetch('/api/auth/verify-email', {
+      const res = await fetch(apiUrl('/api/auth/verify-email'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })
@@ -214,7 +215,7 @@ export default function App() {
 
     try {
       const token = localStorage.getItem('citecheck_token');
-      const res = await fetch('/api/verify', {
+      const res = await fetch(apiUrl('/api/verify'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -305,7 +306,7 @@ export default function App() {
 
     try {
       const token = localStorage.getItem('citecheck_token');
-      const res = await fetch('/api/reports', {
+      const res = await fetch(apiUrl('/api/reports'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -360,7 +361,7 @@ export default function App() {
   const handleDeleteReport = async (reportId) => {
     try {
       const token = localStorage.getItem('citecheck_token');
-      const res = await fetch(`/api/reports/${reportId}`, {
+      const res = await fetch(apiUrl(`/api/reports/${reportId}`), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -393,7 +394,7 @@ export default function App() {
     try {
       const token = localStorage.getItem('citecheck_token');
       if (token) {
-        await fetch('/api/auth/logout', {
+        await fetch(apiUrl('/api/auth/logout'), {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` }
         });

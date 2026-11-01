@@ -10,6 +10,7 @@ import {
   Mail,
   Lock
 } from 'lucide-react';
+import { apiUrl } from '../utils/api';
 
 export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login' }) {
   const [isRegister, setIsRegister] = useState(initialMode === 'register');
@@ -47,7 +48,7 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
     const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
 
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(apiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
