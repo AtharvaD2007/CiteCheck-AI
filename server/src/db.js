@@ -75,9 +75,32 @@ export const DB = {
   createUser({ name, email, password, role = 'Researcher', institution = 'Academic Institution' }) {
     const users = readJSON(USERS_FILE, []);
     const cleanEmail = email.trim().toLowerCase();
-    const existing = users.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (existing) {
-      throw new Error('An account with this email address already exists.');
+    const existingIndex = users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
+    
+    // If user already registered and is verified, reject duplicate
+    if (existingIndex !== -1) {
+      const existingUser = users[existingIndex];
+      if (existingUser.isVerified) {
+        throw new Error('An account with this email address already exists. Please sign in.');
+      }
+
+      // If user exists but is NOT verified yet (e.g. initial email timed out), refresh token & credentials
+      const salt = bcrypt.genSaltSync(10);
+      const passwordHash = bcrypt.hashSync(password, salt);
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      existingUser.name = name.trim();
+      existingUser.passwordHash = passwordHash;
+      existingUser.role = role.trim() || 'Researcher';
+      existingUser.institution = institution.trim() || 'Academic Institution';
+      existingUser.verificationToken = verificationToken;
+      existingUser.verificationTokenExpires = tokenExpires;
+      existingUser.updatedAt = new Date().toISOString();
+
+      users[existingIndex] = existingUser;
+      writeJSON(USERS_FILE, users);
+      return existingUser;
     }
 
     const salt = bcrypt.genSaltSync(10);

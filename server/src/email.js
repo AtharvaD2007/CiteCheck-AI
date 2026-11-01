@@ -24,11 +24,15 @@ function getTransporter() {
       user,
       pass,
     },
+    connectionTimeout: 4000, // 4 seconds connection timeout
+    greetingTimeout: 3000,   // 3 seconds greeting timeout
+    socketTimeout: 5000,     // 5 seconds socket timeout
   });
 }
 
-export async function sendVerificationEmail({ to, name, verificationToken }) {
-  const appUrl = (process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+export async function sendVerificationEmail({ to, name, verificationToken, baseUrl = null }) {
+  const defaultAppUrl = process.env.APP_URL || baseUrl || 'http://localhost:5173';
+  const appUrl = defaultAppUrl.replace(/\/$/, '');
   const verificationUrl = `${appUrl}/?verify_token=${verificationToken}`;
   const fromAddress = process.env.EMAIL_FROM || '"CiteCheck AI" <noreply@citecheck.ai>';
 
@@ -114,23 +118,32 @@ If you did not register for an account, please ignore this email.
   }
 
   try {
-    const info = await transporter.sendMail({
-      from: fromAddress,
-      to,
-      subject: 'Verify your CiteCheck AI Academic Account',
-      text: textContent,
-      html: htmlContent,
+    const timeoutPromise = new Promise((_, reject) => {
+      const t = setTimeout(() => reject(new Error('SMTP connection timed out after 5 seconds.')), 5000);
+      if (typeof t.unref === 'function') t.unref();
     });
+
+    const info = await Promise.race([
+      transporter.sendMail({
+        from: fromAddress,
+        to,
+        subject: 'Verify your CiteCheck AI Academic Account',
+        text: textContent,
+        html: htmlContent,
+      }),
+      timeoutPromise
+    ]);
+
     console.log(`[CiteCheck AI Email Service] Verification email delivered to ${to}. MessageId: ${info.messageId}`);
     return { sent: true, simulated: false, messageId: info.messageId, verificationUrl };
   } catch (err) {
-    console.error(`[CiteCheck AI Email Service] Failed to send email to ${to}:`, err.message);
-    // Return verificationUrl so testing never gets blocked in development
+    console.warn(`[CiteCheck AI Email Service] Email dispatch notice for ${to}:`, err.message);
+    // Return verificationUrl so testing or deployment never gets blocked by network SMTP restrictions
     return {
       sent: false,
       error: err.message,
       verificationUrl,
-      message: `Failed to deliver verification email via SMTP: ${err.message}`
+      message: `Failed to deliver verification email via SMTP (${err.message}). Verification link generated.`
     };
   }
 }

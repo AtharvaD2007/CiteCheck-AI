@@ -97,12 +97,26 @@ app.post("/api/auth/register", async (req, res) => {
     const token = DB.createSession(newUser.id);
     const safeUser = DB.sanitizeUser(newUser);
 
-    // Send verification email
-    const emailResult = await sendVerificationEmail({
-      to: newUser.email,
-      name: newUser.name,
-      verificationToken: newUser.verificationToken,
-    });
+    // Send verification email with automatic baseUrl detection and fast timeout
+    const clientBaseUrl = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+    let emailResult = { sent: false, simulated: false, verificationUrl: null };
+
+    try {
+      emailResult = await sendVerificationEmail({
+        to: newUser.email,
+        name: newUser.name,
+        verificationToken: newUser.verificationToken,
+        baseUrl: clientBaseUrl,
+      });
+    } catch (mailErr) {
+      console.warn("[CiteCheck AI] Verification email dispatch notice:", mailErr.message);
+      const appUrl = (process.env.APP_URL || clientBaseUrl || "http://localhost:5173").replace(/\/$/, "");
+      emailResult = {
+        sent: false,
+        error: mailErr.message,
+        verificationUrl: `${appUrl}/?verify_token=${newUser.verificationToken}`,
+      };
+    }
 
     res.json({
       success: true,
@@ -196,11 +210,25 @@ app.post("/api/auth/resend-verification", async (req, res) => {
 
     const { user, verificationToken } = DB.generateNewVerificationToken(email);
 
-    const emailResult = await sendVerificationEmail({
-      to: user.email,
-      name: user.name,
-      verificationToken,
-    });
+    const clientBaseUrl = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+    let emailResult = { sent: false, simulated: false, verificationUrl: null };
+
+    try {
+      emailResult = await sendVerificationEmail({
+        to: user.email,
+        name: user.name,
+        verificationToken,
+        baseUrl: clientBaseUrl,
+      });
+    } catch (mailErr) {
+      console.warn("[CiteCheck AI] Resend email dispatch notice:", mailErr.message);
+      const appUrl = (process.env.APP_URL || clientBaseUrl || "http://localhost:5173").replace(/\/$/, "");
+      emailResult = {
+        sent: false,
+        error: mailErr.message,
+        verificationUrl: `${appUrl}/?verify_token=${verificationToken}`,
+      };
+    }
 
     res.json({
       success: true,
