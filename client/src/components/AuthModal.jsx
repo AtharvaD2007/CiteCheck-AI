@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -37,8 +37,12 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
     onClose();
   };
 
+  const isSubmittingRef = useRef(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setLoading(true);
     setErrorMsg('');
 
@@ -56,7 +60,7 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
         throw new Error(data.error || 'Authentication failed. Please check your credentials.');
       }
 
-      const activeUser = { ...data.user, isVerified: true };
+      const activeUser = data.user;
       localStorage.setItem('citecheck_token', data.token);
       localStorage.setItem('citecheck_user', JSON.stringify(activeUser));
 
@@ -66,6 +70,7 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
       setErrorMsg(err.message);
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

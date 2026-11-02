@@ -92,26 +92,15 @@ export const DB = {
     const cleanEmail = email.trim().toLowerCase();
     const existingIndex = users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
 
+    if (existingIndex !== -1) {
+      throw new Error('An account with this email address already exists. Please sign in instead.');
+    }
+
     const salt = bcrypt.genSaltSync(10);
     const passwordHash = bcrypt.hashSync(password, salt);
 
-    // If user already registered, seamlessly refresh profile & credentials
-    if (existingIndex !== -1) {
-      const existingUser = users[existingIndex];
-      existingUser.name = name.trim() || existingUser.name;
-      existingUser.passwordHash = passwordHash;
-      existingUser.role = role.trim() || existingUser.role || 'Researcher';
-      existingUser.institution = institution.trim() || existingUser.institution || 'Academic Institution';
-      existingUser.isVerified = true;
-      existingUser.verificationToken = null;
-      existingUser.verificationTokenExpires = null;
-      existingUser.updatedAt = new Date().toISOString();
-      if (!existingUser.verifiedAt) existingUser.verifiedAt = new Date().toISOString();
-
-      users[existingIndex] = existingUser;
-      writeJSON(USERS_FILE, users);
-      return existingUser;
-    }
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
     const newUser = {
       id: `usr_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
@@ -120,11 +109,11 @@ export const DB = {
       passwordHash,
       role: role.trim() || 'Researcher',
       institution: institution.trim() || 'Academic Institution',
-      isVerified: true,
-      verificationToken: null,
-      verificationTokenExpires: null,
+      isVerified: false,
+      verificationToken,
+      verificationTokenExpires,
       createdAt: new Date().toISOString(),
-      verifiedAt: new Date().toISOString()
+      verifiedAt: null
     };
 
     users.push(newUser);

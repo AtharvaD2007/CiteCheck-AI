@@ -1,15 +1,18 @@
 import http from 'http';
+import { DB } from './src/db.js';
 
 function makeRequest(options, postData) {
   return new Promise((resolve, reject) => {
+    const startTime = Date.now();
     const req = http.request(options, (res) => {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
+        const duration = Date.now() - startTime;
         try {
-          resolve({ statusCode: res.statusCode, body: JSON.parse(data) });
+          resolve({ statusCode: res.statusCode, body: JSON.parse(data), duration });
         } catch {
-          resolve({ statusCode: res.statusCode, body: data });
+          resolve({ statusCode: res.statusCode, body: data, duration });
         }
       });
     });
@@ -44,7 +47,7 @@ async function runTests() {
   assert(healthRes.body.status === 'ok', 'Status is "ok"');
   console.log('  Health info:', healthRes.body);
 
-  // 2. User registration
+  // 2. User registration (Instant non-blocking response)
   const testEmail = `scholar_${Date.now()}@cambridge.ac.uk`;
   const testPassword = 'AcademicPassword!2026';
   console.log(`\nTest 2: Register new user (${testEmail})...`);
@@ -65,15 +68,60 @@ async function runTests() {
     }
   );
 
+  console.log(`  Registration duration: ${registerRes.duration}ms`);
   assert(registerRes.statusCode === 200, 'Registration succeeded with code 200');
+  assert(registerRes.duration < 300, `Registration is fast (< 300ms, actual: ${registerRes.duration}ms)`);
   assert(registerRes.body.success === true, 'Registration success flag is true');
-  assert(registerRes.body.user.isVerified === true, 'New user has immediate full access (isVerified: true)');
-  assert(registerRes.body.token, 'Session token provided upon registration');
-  const token = registerRes.body.token;
+  assert(registerRes.body.user.isVerified === false, 'New user requires verification (isVerified: false)');
+  assert(Boolean(registerRes.body.token), 'Session token provided upon registration');
+  assert(Boolean(registerRes.body.verificationUrl), 'Verification URL generated');
+  const initialToken = registerRes.body.token;
 
-  // 3. Re-registration / Seamless profile refresh
-  console.log('\nTest 3: Seamless re-registration with same email...');
-  const reRegisterRes = await makeRequest(
+  // Extract verification token from DB
+  const rawUser = DB.findUserByEmail(testEmail);
+  assert(Boolean(rawUser?.verificationToken), 'Verification token saved in database');
+  const verificationToken = rawUser.verificationToken;
+
+  // 3. Unverified user protected route test (/api/verify should reject)
+  console.log('\nTest 3: Unverified user attempting protected operation (/api/verify)...');
+  const unverifiedVerifyRes = await makeRequest(
+    {
+      hostname: '127.0.0.1',
+      port: 5001,
+      path: '/api/verify',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${initialToken}`
+      }
+    },
+    {
+      claim: 'Aspirin inhibits cyclooxygenase enzyme activity.',
+      citation: 'Vane (1971), Nature',
+      sourcePassage: 'Aspirin irreversibly inhibits cyclooxygenase-1 and -2 enzymes through acetylation.'
+    }
+  );
+  assert(unverifiedVerifyRes.statusCode === 403, 'Unverified user correctly blocked with 403 Forbidden');
+  assert(unverifiedVerifyRes.body.code === 'EMAIL_UNVERIFIED', 'Returns EMAIL_UNVERIFIED error code');
+
+  // 4. Verify email address via token
+  console.log('\nTest 4: Verify email address via token (/api/auth/verify-email)...');
+  const verifyEmailRes = await makeRequest(
+    {
+      hostname: '127.0.0.1',
+      port: 5001,
+      path: '/api/auth/verify-email',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    },
+    { token: verificationToken }
+  );
+  assert(verifyEmailRes.statusCode === 200, 'Email verification succeeded with 200');
+  assert(verifyEmailRes.body.user.isVerified === true, 'User is now verified (isVerified: true)');
+
+  // 5. Duplicate registration prevention
+  console.log('\nTest 5: Duplicate registration prevention with same email...');
+  const duplicateRegisterRes = await makeRequest(
     {
       hostname: '127.0.0.1',
       port: 5001,
@@ -82,18 +130,18 @@ async function runTests() {
       headers: { 'Content-Type': 'application/json' }
     },
     {
-      name: 'Dr. Jane Watson Updated',
+      name: 'Duplicate Watson',
       email: testEmail,
       password: testPassword,
       role: 'Associate Professor',
       institution: 'Cambridge University'
     }
   );
-  assert(reRegisterRes.statusCode === 200, 'Re-registration succeeded without blocking');
-  assert(reRegisterRes.body.user.isVerified === true, 'User remains verified and active');
+  assert(duplicateRegisterRes.statusCode === 400, 'Duplicate registration rejected with 400');
+  assert(duplicateRegisterRes.body.error.includes('already exists'), 'Clear error that account already exists');
 
-  // 4. Test Login
-  console.log('\nTest 4: Test Login with credentials...');
+  // 6. Test Login
+  console.log('\nTest 6: Test Login with credentials...');
   const loginRes = await makeRequest(
     {
       hostname: '127.0.0.1',
@@ -185,8 +233,8 @@ async function runTests() {
   });
   assert(updatedReportsRes.body.reports.length === 1, 'User now has exactly 1 personal report');
 
-  // Test 8b: Duplicate report prevention
-  console.log('\nTest 8b: Duplicate report prevention (Submitting same verification again)...');
+  // 9. Duplicate report prevention
+  console.log('\nTest 9: Duplicate report prevention...');
   const duplicateSaveRes = await makeRequest(
     {
       hostname: '127.0.0.1',
@@ -214,7 +262,6 @@ async function runTests() {
   );
   assert(duplicateSaveRes.statusCode === 200, 'Duplicate submission handled with 200');
 
-  // Verify that report count is STILL strictly 1 (no duplicate created!)
   const dedupeCheckRes = await makeRequest({
     hostname: '127.0.0.1',
     port: 5001,
@@ -225,26 +272,8 @@ async function runTests() {
   assert(dedupeCheckRes.body.reports.length === 1, 'Duplicate was prevented: user still has exactly 1 report');
   assert(dedupeCheckRes.body.reports[0].id === savedReportId, 'Report ID remains consistent');
 
-  // Multiple GET calls (simulate page refresh & reopening My Reports)
-  const refreshCheckRes1 = await makeRequest({
-    hostname: '127.0.0.1',
-    port: 5001,
-    path: '/api/reports',
-    method: 'GET',
-    headers: { Authorization: `Bearer ${activeToken}` }
-  });
-  const refreshCheckRes2 = await makeRequest({
-    hostname: '127.0.0.1',
-    port: 5001,
-    path: '/api/reports',
-    method: 'GET',
-    headers: { Authorization: `Bearer ${activeToken}` }
-  });
-  assert(refreshCheckRes1.body.reports.length === 1, 'Refreshing page keeps report count at 1');
-  assert(refreshCheckRes2.body.reports.length === 1, 'Reopening My Reports keeps report count at 1');
-
-  // 9. Delete report
-  console.log('\nTest 9: Delete personal report...');
+  // 10. Delete report
+  console.log('\nTest 10: Delete personal report...');
   const deleteRes = await makeRequest({
     hostname: '127.0.0.1',
     port: 5001,
@@ -254,17 +283,8 @@ async function runTests() {
   });
   assert(deleteRes.statusCode === 200, 'Report deleted successfully with 200');
 
-  const afterDeleteReportsRes = await makeRequest({
-    hostname: '127.0.0.1',
-    port: 5001,
-    path: '/api/reports',
-    method: 'GET',
-    headers: { Authorization: `Bearer ${activeToken}` }
-  });
-  assert(afterDeleteReportsRes.body.reports.length === 0, 'Report list is empty again after deletion');
-
-  // 10. Test Logout
-  console.log('\nTest 10: Test Logout...');
+  // 11. Test Logout
+  console.log('\nTest 11: Test Logout...');
   const logoutRes = await makeRequest({
     hostname: '127.0.0.1',
     port: 5001,

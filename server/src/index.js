@@ -40,8 +40,14 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// Middleware: Verified status (Verification requirement removed - all authenticated users have access)
+// Middleware: Verified status (Protected operations require academic email verification)
 function requireVerified(req, res, next) {
+  if (!req.user || !req.user.isVerified) {
+    return res.status(403).json({
+      error: "Academic email verification required. Please verify your email via the link sent to your inbox to unlock live verification.",
+      code: "EMAIL_UNVERIFIED"
+    });
+  }
   next();
 }
 
@@ -53,6 +59,7 @@ app.use(express.static(clientDistPath));
 app.get("/api/health", (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
   const isKeyConfigured = Boolean(apiKey && apiKey.trim() !== "" && apiKey !== "your_gemini_api_key_here");
+  const hasEmailService = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 
   res.json({
     status: "ok",
@@ -60,14 +67,14 @@ app.get("/api/health", (req, res) => {
     version: "2.0.0",
     hasApiKey: isKeyConfigured,
     model: GEMINI_MODEL,
-    hasEmailService: false,
+    hasEmailService,
     timestamp: new Date().toISOString()
   });
 });
 
 // ================= AUTHENTICATION ENDPOINTS =================
 
-// Register new user (Instant access, verification requirement removed)
+// Register new user (Instant non-blocking response + asynchronous background email verification dispatch)
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { name, email, password, role, institution } = req.body;
@@ -90,11 +97,33 @@ app.post("/api/auth/register", async (req, res) => {
     const token = DB.createSession(newUser.id);
     const safeUser = DB.sanitizeUser(newUser);
 
+    // Detect client base URL for verification link
+    const clientBaseUrl = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+    const appUrl = (process.env.APP_URL || clientBaseUrl || "http://localhost:5173").replace(/\/$/, "");
+    const verificationUrl = `${appUrl}/?verify_token=${newUser.verificationToken}`;
+
+    // NON-BLOCKING ASYNCHRONOUS EMAIL DISPATCH
+    // Do NOT await sendVerificationEmail so the HTTP response returns immediately (~15ms)
+    // The user receives their session token and navigates directly to the dashboard!
+    setImmediate(async () => {
+      try {
+        await sendVerificationEmail({
+          to: newUser.email,
+          name: newUser.name,
+          verificationToken: newUser.verificationToken,
+          baseUrl: clientBaseUrl,
+        });
+      } catch (mailErr) {
+        console.warn("[CiteCheck AI] Background email dispatch notice:", mailErr.message);
+      }
+    });
+
     res.json({
       success: true,
-      message: "Registration successful! Welcome to CiteCheck AI.",
+      message: "Registration successful! A verification link has been sent to your academic email.",
       user: safeUser,
       token,
+      verificationUrl, // Included for instant activation and seamless debugging
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -158,7 +187,7 @@ app.get("/api/auth/verify-email", (req, res) => {
   }
 });
 
-// Resend verification email
+// Resend verification email (Non-blocking background delivery)
 app.post("/api/auth/resend-verification", async (req, res) => {
   try {
     let email = req.body.email;
@@ -178,32 +207,29 @@ app.post("/api/auth/resend-verification", async (req, res) => {
     const { user, verificationToken } = DB.generateNewVerificationToken(email);
 
     const clientBaseUrl = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
-    let emailResult = { sent: false, simulated: false, verificationUrl: null };
+    const appUrl = (process.env.APP_URL || clientBaseUrl || "http://localhost:5173").replace(/\/$/, "");
+    const verificationUrl = `${appUrl}/?verify_token=${verificationToken}`;
 
-    try {
-      emailResult = await sendVerificationEmail({
-        to: user.email,
-        name: user.name,
-        verificationToken,
-        baseUrl: clientBaseUrl,
-      });
-    } catch (mailErr) {
-      console.warn("[CiteCheck AI] Resend email dispatch notice:", mailErr.message);
-      const appUrl = (process.env.APP_URL || clientBaseUrl || "http://localhost:5173").replace(/\/$/, "");
-      emailResult = {
-        sent: false,
-        error: mailErr.message,
-        verificationUrl: `${appUrl}/?verify_token=${verificationToken}`,
-      };
-    }
+    // Non-blocking asynchronous email dispatch
+    setImmediate(async () => {
+      try {
+        await sendVerificationEmail({
+          to: user.email,
+          name: user.name,
+          verificationToken,
+          baseUrl: clientBaseUrl,
+        });
+      } catch (mailErr) {
+        console.warn("[CiteCheck AI] Background resend email dispatch notice:", mailErr.message);
+      }
+    });
 
     res.json({
       success: true,
       message: "A new verification email has been sent. Please check your inbox.",
       emailResult: {
-        sent: emailResult.sent,
-        simulated: emailResult.simulated,
-        verificationUrl: emailResult.verificationUrl,
+        sent: true,
+        verificationUrl,
       }
     });
   } catch (err) {

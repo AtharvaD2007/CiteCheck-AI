@@ -8,6 +8,7 @@ import { VerificationConditionsGuide } from './components/VerificationConditions
 import { BackgroundParticles } from './components/BackgroundParticles';
 import { AuthScreen } from './components/AuthScreen';
 import { AuthModal } from './components/AuthModal';
+import { UnverifiedBanner } from './components/UnverifiedBanner';
 import { SavedReportsModal } from './components/SavedReportsModal';
 import { AboutModal } from './components/AboutModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
@@ -73,13 +74,16 @@ export default function App() {
     return null;
   }, []);
 
-  // Fetch user personal reports from database
+  // Fetch user personal reports from database (deduplicated)
+  const isFetchingReportsRef = useRef(false);
   const fetchReports = useCallback(async () => {
     const token = localStorage.getItem('citecheck_token');
     if (!token) {
       setSavedReports([]);
       return;
     }
+    if (isFetchingReportsRef.current) return;
+    isFetchingReportsRef.current = true;
 
     try {
       const res = await fetch(apiUrl('/api/reports'), {
@@ -96,6 +100,8 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Could not load user reports:', err);
+    } finally {
+      isFetchingReportsRef.current = false;
     }
   }, []);
 
@@ -190,6 +196,12 @@ export default function App() {
       setAuthModalMode('login');
       setShowAuthModal(true);
       setErrorMessage('Please sign in to verify academic citations.');
+      return;
+    }
+
+    // 1b. Academic email verification requirement
+    if (!user.isVerified) {
+      setErrorMessage('Academic email verification required. Please click the verification link sent to your inbox to unlock live verification.');
       return;
     }
 
@@ -292,6 +304,12 @@ export default function App() {
       return;
     }
 
+    if (!user.isVerified) {
+      setErrorMessage('Please verify your academic email address to save reports to your library.');
+      isSavingRef.current = false;
+      return;
+    }
+
     try {
       const token = localStorage.getItem('citecheck_token');
       const res = await fetch(apiUrl('/api/reports'), {
@@ -366,13 +384,11 @@ export default function App() {
     }
   };
 
-  // Auth Success Handler
+  // Auth Success Handler (Instant dashboard navigation, no redundant calls)
   const handleAuthSuccess = (authenticatedUser) => {
-    const verifiedUser = { ...authenticatedUser, isVerified: true };
-    setUser(verifiedUser);
-    localStorage.setItem('citecheck_user', JSON.stringify(verifiedUser));
-    showToast(`Welcome, ${verifiedUser.name}!`);
-    fetchReports();
+    setUser(authenticatedUser);
+    localStorage.setItem('citecheck_user', JSON.stringify(authenticatedUser));
+    showToast(`Welcome, ${authenticatedUser.name}!`);
   };
 
   // Logout Handler (Compulsory Auth: returns immediately to login portal)
@@ -458,6 +474,14 @@ export default function App() {
         onOpenAbout={() => setShowAboutModal(true)}
         savedReportsCount={savedReports.length}
         hasApiKey={Boolean(health?.hasApiKey)}
+      />
+
+      {/* Email Verification Reminder Banner (when user is unverified) */}
+      <UnverifiedBanner
+        user={user}
+        onSimulatedVerify={(url) => {
+          window.location.href = url;
+        }}
       />
 
       {/* 2. Hero Section with Staggered Entrance and Gradient Animation */}

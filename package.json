@@ -4,6 +4,7 @@
   "private": true,
   "description": "AI-powered Academic Citation Verification System",
   "scripts": {
+    "start": "node server/src/index.js",
     "server": "node --watch server/src/index.js",
     "client": "npm --prefix client run dev",
     "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,cyan\" \"npm run server\" \"npm run client\"",

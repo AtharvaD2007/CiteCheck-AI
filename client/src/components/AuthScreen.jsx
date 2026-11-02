@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen,
@@ -30,6 +30,8 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const isSubmittingRef = useRef(false);
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     if (errorMsg) setErrorMsg('');
@@ -37,6 +39,8 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setLoading(true);
     setErrorMsg('');
 
@@ -54,7 +58,7 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
         throw new Error(data.error || 'Authentication failed. Please verify your credentials.');
       }
 
-      const activeUser = { ...data.user, isVerified: true };
+      const activeUser = data.user;
       localStorage.setItem('citecheck_token', data.token);
       localStorage.setItem('citecheck_user', JSON.stringify(activeUser));
 
@@ -63,6 +67,7 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
       setErrorMsg(err.message);
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
