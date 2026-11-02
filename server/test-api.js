@@ -1,5 +1,4 @@
 import http from 'http';
-import { DB } from './src/db.js';
 
 function makeRequest(options, postData) {
   return new Promise((resolve, reject) => {
@@ -32,11 +31,11 @@ function assert(condition, message) {
 
 async function runTests() {
   console.log('====================================================');
-  console.log('   CiteCheck AI — End-to-End Test Suite');
+  console.log('   CiteCheck AI — MongoDB Atlas End-to-End Test Suite');
   console.log('====================================================\n');
 
-  // 1. Health check
-  console.log('Test 1: Health & status check (/api/health)...');
+  // 1. Health check & MongoDB Atlas status
+  console.log('Test 1: Health & MongoDB database check (/api/health)...');
   const healthRes = await makeRequest({
     hostname: '127.0.0.1',
     port: 5001,
@@ -45,12 +44,14 @@ async function runTests() {
   });
   assert(healthRes.statusCode === 200, 'Health endpoint responds with 200');
   assert(healthRes.body.status === 'ok', 'Status is "ok"');
+  assert(healthRes.body.database?.type === 'MongoDB Atlas', 'Database type is MongoDB Atlas');
+  assert(healthRes.body.database?.status === 'connected', 'Database status is connected');
   console.log('  Health info:', healthRes.body);
 
-  // 2. User registration (Instant non-blocking response)
+  // 2. User registration (Persisted in MongoDB)
   const testEmail = `scholar_${Date.now()}@cambridge.ac.uk`;
   const testPassword = 'AcademicPassword!2026';
-  console.log(`\nTest 2: Register new user (${testEmail})...`);
+  console.log(`\nTest 2: Register new user in MongoDB (${testEmail})...`);
   const registerRes = await makeRequest(
     {
       hostname: '127.0.0.1',
@@ -72,9 +73,10 @@ async function runTests() {
   assert(registerRes.statusCode === 200, 'Registration succeeded with code 200');
   assert(registerRes.duration < 300, `Registration is fast (< 300ms, actual: ${registerRes.duration}ms)`);
   assert(registerRes.body.success === true, 'Registration success flag is true');
-  assert(registerRes.body.user.isVerified === true, 'Registered user is immediately active and verified (isVerified: true)');
+  assert(registerRes.body.user.isVerified === true, 'Registered user is immediately active and verified');
   assert(Boolean(registerRes.body.token), 'Session token provided upon registration');
-  const initialToken = registerRes.body.token;
+  const userAToken = registerRes.body.token;
+  const userAId = registerRes.body.user.id;
 
   // 3. Duplicate registration prevention
   console.log('\nTest 3: Duplicate registration prevention with same email...');
@@ -97,8 +99,40 @@ async function runTests() {
   assert(duplicateRegisterRes.statusCode === 400, 'Duplicate registration rejected with 400');
   assert(duplicateRegisterRes.body.error.includes('already exists'), 'Clear error that account already exists');
 
-  // 6. Test Login
-  console.log('\nTest 6: Test Login with credentials...');
+  // 4. Email verification functionality test
+  console.log('\nTest 4: Email verification endpoints in MongoDB...');
+  const resendRes = await makeRequest(
+    {
+      hostname: '127.0.0.1',
+      port: 5001,
+      path: '/api/auth/resend-verification',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    },
+    { email: testEmail }
+  );
+  assert(resendRes.statusCode === 200, 'Resend verification responded with 200');
+  const verificationUrl = resendRes.body.emailResult?.verificationUrl;
+  assert(Boolean(verificationUrl), 'Verification URL generated');
+  const tokenMatch = verificationUrl.match(/verify_token=([a-f0-9]+)/);
+  const verifyToken = tokenMatch ? tokenMatch[1] : null;
+  assert(Boolean(verifyToken), 'Valid verification token extracted');
+
+  const verifyRes = await makeRequest(
+    {
+      hostname: '127.0.0.1',
+      port: 5001,
+      path: '/api/auth/verify-email',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    },
+    { token: verifyToken }
+  );
+  assert(verifyRes.statusCode === 200, 'Verify email endpoint functions properly with 200');
+  assert(verifyRes.body.user?.isVerified === true, 'User is verified in MongoDB');
+
+  // 5. Test Login with credentials from MongoDB
+  console.log('\nTest 5: Test Login with credentials...');
   const loginRes = await makeRequest(
     {
       hostname: '127.0.0.1',
@@ -110,10 +144,10 @@ async function runTests() {
     { email: testEmail, password: testPassword }
   );
   assert(loginRes.statusCode === 200, 'Login succeeded with code 200');
-  assert(loginRes.body.user?.isVerified === true, 'Logged in user is verified');
+  assert(loginRes.body.user?.email === testEmail.toLowerCase(), 'User data retrieved correctly from MongoDB');
   const activeToken = loginRes.body.token;
 
-  // Test invalid login
+  // Test invalid password
   const badLoginRes = await makeRequest(
     {
       hostname: '127.0.0.1',
@@ -126,8 +160,8 @@ async function runTests() {
   );
   assert(badLoginRes.statusCode === 401, 'Invalid password returns 401 Unauthorized');
 
-  // 7. Personal Reports (Clean empty state initially)
-  console.log('\nTest 7: Personal Report Management (Initial empty state)...');
+  // 6. Personal Reports (Clean empty state initially)
+  console.log('\nTest 6: Personal Reports in MongoDB (Initial clean state)...');
   const reportsRes = await makeRequest({
     hostname: '127.0.0.1',
     port: 5001,
@@ -137,10 +171,10 @@ async function runTests() {
   });
   assert(reportsRes.statusCode === 200, 'Get reports returned 200');
   assert(Array.isArray(reportsRes.body.reports), 'Reports is an array');
-  assert(reportsRes.body.reports.length === 0, 'Clean empty state: 0 reports initially for new user (no dummy records)');
+  assert(reportsRes.body.reports.length === 0, 'Clean empty state: 0 reports initially for new user');
 
-  // 8. Save a personal report
-  console.log('\nTest 8: Save a verified report for the user...');
+  // 7. Save a personal report in MongoDB
+  console.log('\nTest 7: Save a verified report into MongoDB...');
   const saveReportRes = await makeRequest(
     {
       hostname: '127.0.0.1',
@@ -180,18 +214,60 @@ async function runTests() {
   const savedReportId = saveReportRes.body.report?.id;
   assert(Boolean(savedReportId), 'Saved report received a valid ID');
 
-  // Check that the user now sees 1 report
-  const updatedReportsRes = await makeRequest({
+  // Verify that User A has 1 report
+  const userAReportsRes = await makeRequest({
     hostname: '127.0.0.1',
     port: 5001,
     path: '/api/reports',
     method: 'GET',
     headers: { Authorization: `Bearer ${activeToken}` }
   });
-  assert(updatedReportsRes.body.reports.length === 1, 'User now has exactly 1 personal report');
+  assert(userAReportsRes.body.reports.length === 1, 'User A has exactly 1 report in MongoDB');
+
+  // 8. Strict User Isolation Verification (Requirement: Ensure each user can access only their own reports)
+  console.log('\nTest 8: Strict User Isolation Verification (User B cannot see or delete User A reports)...');
+  const userBEmail = `scholar_b_${Date.now()}@oxford.ac.uk`;
+  const registerUserBRes = await makeRequest(
+    {
+      hostname: '127.0.0.1',
+      port: 5001,
+      path: '/api/auth/register',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    },
+    {
+      name: 'Dr. Arthur Conan',
+      email: userBEmail,
+      password: 'AcademicPassword!2026',
+      role: 'Professor',
+      institution: 'Oxford University'
+    }
+  );
+  assert(registerUserBRes.statusCode === 200, 'User B registered successfully');
+  const userBToken = registerUserBRes.body.token;
+
+  // User B queries their reports
+  const userBReportsRes = await makeRequest({
+    hostname: '127.0.0.1',
+    port: 5001,
+    path: '/api/reports',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${userBToken}` }
+  });
+  assert(userBReportsRes.body.reports.length === 0, 'User B reports library is isolated (sees 0 reports, cannot see User A reports)');
+
+  // User B tries to delete User A's report
+  const unauthorizedDeleteRes = await makeRequest({
+    hostname: '127.0.0.1',
+    port: 5001,
+    path: `/api/reports/${savedReportId}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userBToken}` }
+  });
+  assert(unauthorizedDeleteRes.statusCode === 404, 'User B cannot delete User A report (returns 404 Not Found)');
 
   // 9. Duplicate report prevention
-  console.log('\nTest 9: Duplicate report prevention...');
+  console.log('\nTest 9: Duplicate report prevention in MongoDB...');
   const duplicateSaveRes = await makeRequest(
     {
       hostname: '127.0.0.1',
@@ -226,11 +302,11 @@ async function runTests() {
     method: 'GET',
     headers: { Authorization: `Bearer ${activeToken}` }
   });
-  assert(dedupeCheckRes.body.reports.length === 1, 'Duplicate was prevented: user still has exactly 1 report');
+  assert(dedupeCheckRes.body.reports.length === 1, 'Duplicate was prevented: user still has exactly 1 report in MongoDB');
   assert(dedupeCheckRes.body.reports[0].id === savedReportId, 'Report ID remains consistent');
 
   // 10. Delete report
-  console.log('\nTest 10: Delete personal report...');
+  console.log('\nTest 10: Delete personal report in MongoDB...');
   const deleteRes = await makeRequest({
     hostname: '127.0.0.1',
     port: 5001,
@@ -238,7 +314,7 @@ async function runTests() {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${activeToken}` }
   });
-  assert(deleteRes.statusCode === 200, 'Report deleted successfully with 200');
+  assert(deleteRes.statusCode === 200, 'Report deleted successfully from MongoDB');
 
   // 11. Test Logout
   console.log('\nTest 11: Test Logout...');
@@ -252,7 +328,7 @@ async function runTests() {
   assert(logoutRes.statusCode === 200, 'Logout succeeded with code 200');
 
   console.log('\n====================================================');
-  console.log('   🎉 All CiteCheck AI End-to-End Tests Passed!');
+  console.log('   🎉 All CiteCheck AI MongoDB Tests Passed!');
   console.log('====================================================\n');
 }
 

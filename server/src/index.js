@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { verifyCitation } from "./verifier.js";
-import { DB } from "./db.js";
+import { DB, connectDB } from "./db.js";
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -20,26 +20,31 @@ app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 
 // Helper to extract authenticated user from Authorization header
-function getAuthUser(req) {
+async function getAuthUser(req) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null;
   }
   const token = authHeader.split(" ")[1];
-  return DB.getUserByToken(token);
+  return await DB.getUserByToken(token);
 }
 
 // Middleware: Require valid logged-in user
-function requireAuth(req, res, next) {
-  const user = getAuthUser(req);
-  if (!user) {
-    return res.status(401).json({ error: "Authentication required. Please sign in to continue." });
+async function requireAuth(req, res, next) {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ error: "Authentication required. Please sign in to continue." });
+    }
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error("[Auth Error]", err.message);
+    res.status(500).json({ error: "Authentication check failed." });
   }
-  req.user = user;
-  next();
 }
 
-// Middleware: Verified status (Email verification removed: pass-through)
+// Middleware: Verified status pass-through
 function requireVerified(req, res, next) {
   next();
 }
@@ -53,21 +58,26 @@ app.get("/api/health", (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
   const isKeyConfigured = Boolean(apiKey && apiKey.trim() !== "" && apiKey !== "your_gemini_api_key_here");
   const hasEmailService = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+  const dbStatus = DB.isConnected() ? "connected" : "disconnected";
 
   res.json({
     status: "ok",
     service: "CiteCheck AI API",
-    version: "2.1.0",
+    version: "2.2.0",
     hasApiKey: isKeyConfigured,
     model: GEMINI_MODEL,
     hasEmailService,
+    database: {
+      type: "MongoDB Atlas",
+      status: dbStatus
+    },
     timestamp: new Date().toISOString()
   });
 });
 
 // ================= AUTHENTICATION ENDPOINTS =================
 
-// Register new user (Instant: account is immediately verified and active)
+// Register new user (Persisted in MongoDB Atlas)
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { name, email, password, role, institution } = req.body;
@@ -87,7 +97,7 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     const newUser = await DB.createUser({ name, email, password, role, institution });
-    const token = DB.createSession(newUser.id);
+    const token = await DB.createSession(newUser.id);
     const safeUser = DB.sanitizeUser(newUser);
 
     res.json({
@@ -101,7 +111,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-// Login
+// Login (Authenticated against MongoDB Atlas)
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -114,7 +124,7 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password." });
     }
 
-    const token = DB.createSession(user.id);
+    const token = await DB.createSession(user.id);
     const safeUser = DB.sanitizeUser(user);
 
     res.json({ success: true, user: safeUser, token });
@@ -123,25 +133,69 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Verify email address (Pass-through: verification no longer required)
-app.post("/api/auth/verify-email", (req, res) => {
-  res.json({
-    success: true,
-    message: "Email verification is not required. Your account has full access.",
-    user: { isVerified: true },
-  });
+// Verify email address via token (POST)
+app.post("/api/auth/verify-email", async (req, res) => {
+  try {
+    const token = req.body.token || req.query.token;
+    if (!token) {
+      return res.status(400).json({ error: "Verification token is required." });
+    }
+
+    const verifiedUser = await DB.verifyUserEmail(token);
+    res.json({
+      success: true,
+      message: "Academic email successfully verified! You now have full access to CiteCheck AI.",
+      user: verifiedUser,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-app.get("/api/auth/verify-email", (req, res) => {
-  const appUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/$/, "");
-  res.redirect(`${appUrl}/`);
+// Verify email address via GET link
+app.get("/api/auth/verify-email", async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) {
+      return res.status(400).send("<h1>Verification failed</h1><p>Missing verification token.</p>");
+    }
+
+    await DB.verifyUserEmail(token);
+    const appUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/$/, "");
+    res.redirect(`${appUrl}/?verified=true`);
+  } catch (err) {
+    res.status(400).send(`<h1>Verification Error</h1><p>${err.message}</p><p><a href="/">Return to CiteCheck AI</a></p>`);
+  }
 });
 
-app.post("/api/auth/resend-verification", (req, res) => {
-  res.json({
-    success: true,
-    message: "Email verification is not required. Your account is already verified.",
-  });
+// Resend verification email
+app.post("/api/auth/resend-verification", async (req, res) => {
+  try {
+    let email = req.body.email;
+    if (!email) {
+      const user = await getAuthUser(req);
+      if (user) {
+        email = user.email;
+      }
+    }
+
+    if (!email) {
+      return res.status(400).json({ error: "Email address is required to resend verification." });
+    }
+
+    const { user, verificationToken } = await DB.generateNewVerificationToken(email);
+
+    res.json({
+      success: true,
+      message: "A new verification email has been sent. Please check your inbox.",
+      emailResult: {
+        sent: true,
+        verificationUrl: `${(process.env.APP_URL || "http://localhost:5173").replace(/\/$/, "")}/?verify_token=${verificationToken}`
+      }
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Current user profile
@@ -150,11 +204,11 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
 });
 
 // Logout
-app.post("/api/auth/logout", (req, res) => {
+app.post("/api/auth/logout", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.split(" ")[1];
-    DB.deleteSession(token);
+    await DB.deleteSession(token);
   }
   res.json({ success: true, message: "Logged out successfully" });
 });
@@ -164,7 +218,7 @@ app.post("/api/auth/logout", (req, res) => {
 // In-flight verification tracking to prevent duplicate concurrent API executions
 const inFlightVerifications = new Map();
 
-// Perform live Gemini AI verification (Protected: authenticated + verified user)
+// Perform live Gemini AI verification (Protected: authenticated user)
 app.post("/api/verify", requireAuth, requireVerified, async (req, res) => {
   try {
     const { claim, citation, sourcePassage } = req.body;
@@ -203,8 +257,8 @@ app.post("/api/verify", requireAuth, requireVerified, async (req, res) => {
           modelName: GEMINI_MODEL
         });
 
-        // Automatically save exactly one actual verification report linked to the logged in user
-        const savedReport = DB.saveReport({
+        // Automatically save exactly one actual verification report linked to the logged in user in MongoDB
+        const savedReport = await DB.saveReport({
           userId: req.user.id,
           input: { claim, citation, sourcePassage },
           report
@@ -237,14 +291,19 @@ app.post("/api/verify", requireAuth, requireVerified, async (req, res) => {
 
 // ================= PERSONAL REPORT MANAGEMENT =================
 
-// Get logged-in user's personal reports (Protected: authenticated + verified user)
-app.get("/api/reports", requireAuth, requireVerified, (req, res) => {
-  const reports = DB.getReportsByUser(req.user.id);
-  res.json({ success: true, reports });
+// Get logged-in user's personal reports (Isolated strictly to req.user.id)
+app.get("/api/reports", requireAuth, requireVerified, async (req, res) => {
+  try {
+    const reports = await DB.getReportsByUser(req.user.id);
+    res.json({ success: true, reports });
+  } catch (err) {
+    console.error("[Reports Fetch Error]", err.message);
+    res.status(500).json({ error: "Failed to fetch user reports." });
+  }
 });
 
-// Save an existing report (Protected: authenticated + verified user)
-app.post("/api/reports", requireAuth, requireVerified, (req, res) => {
+// Save an existing report (Associated with req.user.id)
+app.post("/api/reports", requireAuth, requireVerified, async (req, res) => {
   try {
     const { title, input, report } = req.body;
 
@@ -252,7 +311,7 @@ app.post("/api/reports", requireAuth, requireVerified, (req, res) => {
       return res.status(400).json({ error: "Invalid report data: claim input and report result are required." });
     }
 
-    const saved = DB.saveReport({
+    const saved = await DB.saveReport({
       userId: req.user.id,
       title,
       input,
@@ -265,11 +324,11 @@ app.post("/api/reports", requireAuth, requireVerified, (req, res) => {
   }
 });
 
-// Delete a report owned by the user (Protected: authenticated + verified user)
-app.delete("/api/reports/:id", requireAuth, requireVerified, (req, res) => {
+// Delete a report owned by the user
+app.delete("/api/reports/:id", requireAuth, requireVerified, async (req, res) => {
   try {
     const reportId = req.params.id;
-    const deleted = DB.deleteReport(reportId, req.user.id);
+    const deleted = await DB.deleteReport(reportId, req.user.id);
 
     if (!deleted) {
       return res.status(404).json({ error: "Report not found or you do not have permission to delete it." });
@@ -291,12 +350,23 @@ app.get("*", (req, res) => {
   });
 });
 
-// Start Express server
-app.listen(PORT, () => {
-  console.log(`\n=================================================`);
-  console.log(`  CiteCheck AI Server Running`);
-  console.log(`  Port: http://localhost:${PORT}`);
-  console.log(`  Model: ${GEMINI_MODEL}`);
-  console.log(`  Gemini Key: ${process.env.GEMINI_API_KEY ? "CONFIGURED" : "MISSING (Set in server/.env)"}`);
-  console.log(`=================================================\n`);
-});
+// Connect to MongoDB Atlas and start Express server
+async function startServer() {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error("[CiteCheck AI] Database connection could not be established on startup:", err.message);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`\n=================================================`);
+    console.log(`  CiteCheck AI Server Running`);
+    console.log(`  Port: http://localhost:${PORT}`);
+    console.log(`  Database: ${DB.isConnected() ? "MongoDB Atlas (Connected)" : "Disconnected"}`);
+    console.log(`  Model: ${GEMINI_MODEL}`);
+    console.log(`  Gemini Key: ${process.env.GEMINI_API_KEY ? "CONFIGURED" : "MISSING (Set in server/.env)"}`);
+    console.log(`=================================================\n`);
+  });
+}
+
+startServer();
