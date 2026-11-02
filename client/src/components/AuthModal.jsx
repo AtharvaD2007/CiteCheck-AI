@@ -289,9 +289,6 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
                       }}
                     />
                   </div>
-                  {isRegister && (
-                    <span className="field-hint">A verification link will be sent to this address.</span>
-                  )}
                 </div>
 
                 <div className="form-group">

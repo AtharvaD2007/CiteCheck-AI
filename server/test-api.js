@@ -72,55 +72,12 @@ async function runTests() {
   assert(registerRes.statusCode === 200, 'Registration succeeded with code 200');
   assert(registerRes.duration < 300, `Registration is fast (< 300ms, actual: ${registerRes.duration}ms)`);
   assert(registerRes.body.success === true, 'Registration success flag is true');
-  assert(registerRes.body.user.isVerified === false, 'New user requires verification (isVerified: false)');
+  assert(registerRes.body.user.isVerified === true, 'Registered user is immediately active and verified (isVerified: true)');
   assert(Boolean(registerRes.body.token), 'Session token provided upon registration');
-  assert(Boolean(registerRes.body.verificationUrl), 'Verification URL generated');
   const initialToken = registerRes.body.token;
 
-  // Extract verification token from DB
-  const rawUser = DB.findUserByEmail(testEmail);
-  assert(Boolean(rawUser?.verificationToken), 'Verification token saved in database');
-  const verificationToken = rawUser.verificationToken;
-
-  // 3. Unverified user protected route test (/api/verify should reject)
-  console.log('\nTest 3: Unverified user attempting protected operation (/api/verify)...');
-  const unverifiedVerifyRes = await makeRequest(
-    {
-      hostname: '127.0.0.1',
-      port: 5001,
-      path: '/api/verify',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${initialToken}`
-      }
-    },
-    {
-      claim: 'Aspirin inhibits cyclooxygenase enzyme activity.',
-      citation: 'Vane (1971), Nature',
-      sourcePassage: 'Aspirin irreversibly inhibits cyclooxygenase-1 and -2 enzymes through acetylation.'
-    }
-  );
-  assert(unverifiedVerifyRes.statusCode === 403, 'Unverified user correctly blocked with 403 Forbidden');
-  assert(unverifiedVerifyRes.body.code === 'EMAIL_UNVERIFIED', 'Returns EMAIL_UNVERIFIED error code');
-
-  // 4. Verify email address via token
-  console.log('\nTest 4: Verify email address via token (/api/auth/verify-email)...');
-  const verifyEmailRes = await makeRequest(
-    {
-      hostname: '127.0.0.1',
-      port: 5001,
-      path: '/api/auth/verify-email',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    },
-    { token: verificationToken }
-  );
-  assert(verifyEmailRes.statusCode === 200, 'Email verification succeeded with 200');
-  assert(verifyEmailRes.body.user.isVerified === true, 'User is now verified (isVerified: true)');
-
-  // 5. Duplicate registration prevention
-  console.log('\nTest 5: Duplicate registration prevention with same email...');
+  // 3. Duplicate registration prevention
+  console.log('\nTest 3: Duplicate registration prevention with same email...');
   const duplicateRegisterRes = await makeRequest(
     {
       hostname: '127.0.0.1',

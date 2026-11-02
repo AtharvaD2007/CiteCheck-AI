@@ -5,7 +5,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { verifyCitation } from "./verifier.js";
 import { DB } from "./db.js";
-import { sendVerificationEmail } from "./email.js";
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -40,14 +39,8 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// Middleware: Verified status (Protected operations require academic email verification)
+// Middleware: Verified status (Email verification removed: pass-through)
 function requireVerified(req, res, next) {
-  if (!req.user || !req.user.isVerified) {
-    return res.status(403).json({
-      error: "Academic email verification required. Please verify your email via the link sent to your inbox to unlock live verification.",
-      code: "EMAIL_UNVERIFIED"
-    });
-  }
   next();
 }
 
@@ -74,7 +67,7 @@ app.get("/api/health", (req, res) => {
 
 // ================= AUTHENTICATION ENDPOINTS =================
 
-// Register new user (Instant non-blocking response + asynchronous background email verification dispatch)
+// Register new user (Instant: account is immediately verified and active)
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { name, email, password, role, institution } = req.body;
@@ -97,33 +90,11 @@ app.post("/api/auth/register", async (req, res) => {
     const token = DB.createSession(newUser.id);
     const safeUser = DB.sanitizeUser(newUser);
 
-    // Detect client base URL for verification link
-    const clientBaseUrl = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
-    const appUrl = (process.env.APP_URL || clientBaseUrl || "http://localhost:5173").replace(/\/$/, "");
-    const verificationUrl = `${appUrl}/?verify_token=${newUser.verificationToken}`;
-
-    // NON-BLOCKING ASYNCHRONOUS EMAIL DISPATCH
-    // Do NOT await sendVerificationEmail so the HTTP response returns immediately (~15ms)
-    // The user receives their session token and navigates directly to the dashboard!
-    setImmediate(async () => {
-      try {
-        await sendVerificationEmail({
-          to: newUser.email,
-          name: newUser.name,
-          verificationToken: newUser.verificationToken,
-          baseUrl: clientBaseUrl,
-        });
-      } catch (mailErr) {
-        console.warn("[CiteCheck AI] Background email dispatch notice:", mailErr.message);
-      }
-    });
-
     res.json({
       success: true,
-      message: "Registration successful! A verification link has been sent to your academic email.",
+      message: "Registration successful! Welcome to CiteCheck AI.",
       user: safeUser,
       token,
-      verificationUrl, // Included for instant activation and seamless debugging
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -152,89 +123,25 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Verify email address via token (POST)
+// Verify email address (Pass-through: verification no longer required)
 app.post("/api/auth/verify-email", (req, res) => {
-  try {
-    const token = req.body.token || req.query.token;
-    if (!token) {
-      return res.status(400).json({ error: "Verification token is required." });
-    }
-
-    const verifiedUser = DB.verifyUserEmail(token);
-    res.json({
-      success: true,
-      message: "Academic email successfully verified! You now have full access to CiteCheck AI.",
-      user: verifiedUser,
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+  res.json({
+    success: true,
+    message: "Email verification is not required. Your account has full access.",
+    user: { isVerified: true },
+  });
 });
 
-// Verify email address via GET link (e.g. clicked in email)
 app.get("/api/auth/verify-email", (req, res) => {
-  try {
-    const token = req.query.token;
-    if (!token) {
-      return res.status(400).send("<h1>Verification failed</h1><p>Missing verification token.</p>");
-    }
-
-    DB.verifyUserEmail(token);
-    const appUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/$/, "");
-    res.redirect(`${appUrl}/?verified=true`);
-  } catch (err) {
-    res.status(400).send(`<h1>Verification Error</h1><p>${err.message}</p><p><a href="/">Return to CiteCheck AI</a></p>`);
-  }
+  const appUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/$/, "");
+  res.redirect(`${appUrl}/`);
 });
 
-// Resend verification email (Non-blocking background delivery)
-app.post("/api/auth/resend-verification", async (req, res) => {
-  try {
-    let email = req.body.email;
-
-    // Fallback to token if logged in
-    if (!email) {
-      const user = getAuthUser(req);
-      if (user) {
-        email = user.email;
-      }
-    }
-
-    if (!email) {
-      return res.status(400).json({ error: "Email address is required to resend verification." });
-    }
-
-    const { user, verificationToken } = DB.generateNewVerificationToken(email);
-
-    const clientBaseUrl = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
-    const appUrl = (process.env.APP_URL || clientBaseUrl || "http://localhost:5173").replace(/\/$/, "");
-    const verificationUrl = `${appUrl}/?verify_token=${verificationToken}`;
-
-    // Non-blocking asynchronous email dispatch
-    setImmediate(async () => {
-      try {
-        await sendVerificationEmail({
-          to: user.email,
-          name: user.name,
-          verificationToken,
-          baseUrl: clientBaseUrl,
-        });
-      } catch (mailErr) {
-        console.warn("[CiteCheck AI] Background resend email dispatch notice:", mailErr.message);
-      }
-    });
-
-    res.json({
-      success: true,
-      message: "A new verification email has been sent. Please check your inbox.",
-      emailResult: {
-        sent: true,
-        verificationUrl,
-      }
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+app.post("/api/auth/resend-verification", (req, res) => {
+  res.json({
+    success: true,
+    message: "Email verification is not required. Your account is already verified.",
+  });
 });
 
 // Current user profile

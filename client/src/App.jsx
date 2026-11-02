@@ -8,7 +8,6 @@ import { VerificationConditionsGuide } from './components/VerificationConditions
 import { BackgroundParticles } from './components/BackgroundParticles';
 import { AuthScreen } from './components/AuthScreen';
 import { AuthModal } from './components/AuthModal';
-import { UnverifiedBanner } from './components/UnverifiedBanner';
 import { SavedReportsModal } from './components/SavedReportsModal';
 import { AboutModal } from './components/AboutModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
@@ -75,16 +74,10 @@ export default function App() {
   }, []);
 
   // Fetch user personal reports from database (deduplicated)
-  // Only fetches when the user is verified — unverified users cannot access saved reports
   const isFetchingReportsRef = useRef(false);
-  const fetchReports = useCallback(async (currentUser) => {
+  const fetchReports = useCallback(async () => {
     const token = localStorage.getItem('citecheck_token');
     if (!token) {
-      setSavedReports([]);
-      return;
-    }
-    // Skip reports fetch for unverified users — backend returns 403 EMAIL_UNVERIFIED
-    if (currentUser && !currentUser.isVerified) {
       setSavedReports([]);
       return;
     }
@@ -103,9 +96,6 @@ export default function App() {
         localStorage.removeItem('citecheck_token');
         localStorage.removeItem('citecheck_user');
         setUser(null);
-      } else if (res.status === 403) {
-        // Email not verified — clear reports silently (no logout)
-        setSavedReports([]);
       }
     } catch (err) {
       console.warn('Could not load user reports:', err);
@@ -133,55 +123,14 @@ export default function App() {
     }
   }, []);
 
-  // Direct email token verification handler
-  const handleDirectVerifyToken = async (token) => {
-    if (!token) return;
-    try {
-      const res = await fetch(apiUrl('/api/auth/verify-email'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast('Academic email successfully verified! Full access unlocked.');
-        if (data.user) {
-          setUser(data.user);
-          localStorage.setItem('citecheck_user', JSON.stringify(data.user));
-        }
-      } else {
-        setErrorMessage(data.error || 'Email verification failed or token has expired.');
-      }
-    } catch (err) {
-      setErrorMessage('Could not complete email verification.');
-    }
-  };
-
-  // Handle URL email verification link on load
   useEffect(() => {
-    const handleUrlVerification = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const verifyToken = params.get('verify_token');
-      const wasVerified = params.get('verified');
-
-      if (verifyToken) {
-        await handleDirectVerifyToken(verifyToken);
-        window.history.replaceState({}, document.title, window.location.pathname);
-      } else if (wasVerified) {
-        showToast('Academic email successfully verified!');
-        refreshUser();
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-    };
-
     fetchHealth();
-    handleUrlVerification();
-  }, [fetchHealth, refreshUser]);
+  }, [fetchHealth]);
 
-  // When user state changes, refresh personal reports (only if verified)
+  // When user state changes, refresh personal reports
   useEffect(() => {
     if (user) {
-      fetchReports(user);
+      fetchReports();
     } else {
       setSavedReports([]);
     }
@@ -205,12 +154,6 @@ export default function App() {
       setAuthModalMode('login');
       setShowAuthModal(true);
       setErrorMessage('Please sign in to verify academic citations.');
-      return;
-    }
-
-    // 1b. Academic email verification requirement
-    if (!user.isVerified) {
-      setErrorMessage('Academic email verification required. Please click the verification link sent to your inbox to unlock live verification.');
       return;
     }
 
@@ -309,12 +252,6 @@ export default function App() {
 
     if (!user) {
       setErrorMessage('Please sign in to save reports.');
-      isSavingRef.current = false;
-      return;
-    }
-
-    if (!user.isVerified) {
-      setErrorMessage('Please verify your academic email address to save reports to your library.');
       isSavingRef.current = false;
       return;
     }
@@ -422,21 +359,6 @@ export default function App() {
     showToast('Signed out of CiteCheck AI.');
   };
 
-  // Helper for dev verification link
-  const handleSimulatedVerify = (url) => {
-    try {
-      const parsed = new URL(url);
-      const token = parsed.searchParams.get('verify_token');
-      if (token) {
-        handleDirectVerifyToken(token);
-      } else {
-        window.location.href = url;
-      }
-    } catch {
-      window.location.href = url;
-    }
-  };
-
   // =========================================================================
   // COMPULSORY AUTHENTICATION GATEWAY
   // If user is not authenticated, render the dedicated full-page Auth Portal
@@ -447,7 +369,6 @@ export default function App() {
         <BackgroundParticles />
         <AuthScreen
           onAuthSuccess={handleAuthSuccess}
-          onVerifyToken={handleDirectVerifyToken}
         />
         {toastMessage && (
           <div className="toast-notice">
@@ -472,25 +393,11 @@ export default function App() {
           setShowAuthModal(true);
         }}
         onLogout={handleLogout}
-        onOpenSavedReports={() => {
-          if (!user.isVerified) {
-            showToast('Please verify your academic email address first.');
-          } else {
-            setShowSavedReportsModal(true);
-          }
-        }}
+        onOpenSavedReports={() => setShowSavedReportsModal(true)}
         onOpenSetup={() => setShowSetupModal(true)}
         onOpenAbout={() => setShowAboutModal(true)}
         savedReportsCount={savedReports.length}
         hasApiKey={Boolean(health?.hasApiKey)}
-      />
-
-      {/* Email Verification Reminder Banner (when user is unverified) */}
-      <UnverifiedBanner
-        user={user}
-        onSimulatedVerify={(url) => {
-          window.location.href = url;
-        }}
       />
 
       {/* 2. Hero Section with Staggered Entrance and Gradient Animation */}

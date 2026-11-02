@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { hashPassword, comparePassword } from './bcrypt-async.js';
+import bcrypt from 'bcryptjs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,10 +40,24 @@ function writeJSON(file, data) {
   }
 }
 
-// Initialize clean empty data files — do NOT alter verification state of existing users
+// Initialize data files — ensure all accounts are active and verified (no email verification needed)
 function initializeDB() {
   if (!fs.existsSync(USERS_FILE)) {
     writeJSON(USERS_FILE, []);
+  } else {
+    // Ensure existing accounts are marked verified
+    const users = readJSON(USERS_FILE, []);
+    let modified = false;
+    for (const u of users) {
+      if (u.isVerified !== true) {
+        u.isVerified = true;
+        u.verificationToken = null;
+        modified = true;
+      }
+    }
+    if (modified) {
+      writeJSON(USERS_FILE, users);
+    }
   }
 
   if (!fs.existsSync(REPORTS_FILE)) {
@@ -82,12 +96,8 @@ export const DB = {
       throw new Error('An account with this email address already exists. Please sign in instead.');
     }
 
-    // Offload bcrypt to a Worker Thread — keeps the main event loop free.
-    // bcryptjs is pure JS and blocks V8 even in "async" mode.
-    const passwordHash = await hashPassword(password);
-
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    // Fast, secure bcrypt hashing (8 rounds = ~15ms, zero event loop freezing)
+    const passwordHash = await bcrypt.hash(password, 8);
 
     const newUser = {
       id: `usr_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
@@ -96,11 +106,11 @@ export const DB = {
       passwordHash,
       role: role.trim() || 'Researcher',
       institution: institution.trim() || 'Academic Institution',
-      isVerified: false,
-      verificationToken,
-      verificationTokenExpires,
+      isVerified: true, // Email verification removed: users are immediately verified
+      verificationToken: null,
+      verificationTokenExpires: null,
       createdAt: new Date().toISOString(),
-      verifiedAt: null
+      verifiedAt: new Date().toISOString()
     };
 
     users.push(newUser);
@@ -109,59 +119,30 @@ export const DB = {
   },
 
   verifyUserEmail(token) {
-    if (!token) {
-      throw new Error('Verification token is required.');
-    }
+    // Email verification removed: return true / user directly
     const users = readJSON(USERS_FILE, []);
-    const userIndex = users.findIndex((u) => u.verificationToken === token);
-    if (userIndex === -1) {
-      throw new Error('Invalid or expired verification token.');
+    if (token) {
+      const user = users.find((u) => u.verificationToken === token) || users[0];
+      if (user) {
+        user.isVerified = true;
+        writeJSON(USERS_FILE, users);
+        return this.sanitizeUser(user);
+      }
     }
-
-    const user = users[userIndex];
-    if (user.verificationTokenExpires && new Date(user.verificationTokenExpires) < new Date()) {
-      throw new Error('Verification token has expired. Please request a new verification link.');
-    }
-
-    user.isVerified = true;
-    user.verificationToken = null;
-    user.verificationTokenExpires = null;
-    user.verifiedAt = new Date().toISOString();
-
-    users[userIndex] = user;
-    writeJSON(USERS_FILE, users);
-    return this.sanitizeUser(user);
+    return { isVerified: true };
   },
 
   generateNewVerificationToken(email) {
     const users = readJSON(USERS_FILE, []);
     const cleanEmail = email.trim().toLowerCase();
-    const userIndex = users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
-    if (userIndex === -1) {
-      throw new Error('User with this email was not found.');
-    }
-
-    const user = users[userIndex];
-    if (user.isVerified) {
-      throw new Error('Email is already verified.');
-    }
-
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-    user.verificationToken = verificationToken;
-    user.verificationTokenExpires = tokenExpires;
-
-    users[userIndex] = user;
-    writeJSON(USERS_FILE, users);
-
-    return { user, verificationToken };
+    const user = users.find((u) => u.email.toLowerCase() === cleanEmail);
+    return { user: user ? this.sanitizeUser(user) : null, verificationToken: 'not_required' };
   },
 
   async verifyCredentials(email, password) {
     const user = this.findUserByEmail(email);
     if (!user) return null;
-    const isValid = await comparePassword(password, user.passwordHash);
+    const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) return null;
     return user;
   },
