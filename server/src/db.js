@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
+import { hashPassword, comparePassword } from './bcrypt-async.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -82,8 +82,9 @@ export const DB = {
       throw new Error('An account with this email address already exists. Please sign in instead.');
     }
 
-    // Use async bcrypt to avoid blocking the event loop on Render's CPU-throttled container
-    const passwordHash = await bcrypt.hash(password, 10);
+    // Offload bcrypt to a Worker Thread — keeps the main event loop free.
+    // bcryptjs is pure JS and blocks V8 even in "async" mode.
+    const passwordHash = await hashPassword(password);
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -160,7 +161,7 @@ export const DB = {
   async verifyCredentials(email, password) {
     const user = this.findUserByEmail(email);
     if (!user) return null;
-    const isValid = await bcrypt.compare(password, user.passwordHash);
+    const isValid = await comparePassword(password, user.passwordHash);
     if (!isValid) return null;
     return user;
   },
