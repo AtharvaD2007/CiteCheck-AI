@@ -64,7 +64,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     service: "CiteCheck AI API",
-    version: "2.0.0",
+    version: "2.1.0",
     hasApiKey: isKeyConfigured,
     model: GEMINI_MODEL,
     hasEmailService,
