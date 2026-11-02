@@ -10,6 +10,28 @@ import {
   Sparkles
 } from 'lucide-react';
 
+function getInitials(name, email) {
+  if (name && name.trim()) {
+    const cleaned = name.trim().replace(/^(dr\.|prof\.|mr\.|mrs\.|ms\.)\s+/i, '');
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    if (parts.length === 1 && parts[0].length >= 2) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+    return cleaned.slice(0, 2).toUpperCase();
+  }
+  if (email && email.trim()) {
+    const handle = email.split('@')[0].replace(/[^a-zA-Z]/g, '');
+    if (handle.length >= 2) {
+      return handle.slice(0, 2).toUpperCase();
+    }
+    return email.slice(0, 2).toUpperCase();
+  }
+  return 'AI';
+}
+
 export function Navbar({
   user,
   onOpenAuth,
@@ -125,16 +147,17 @@ export function Navbar({
               <div className="nav-user-profile">
                 <motion.div
                   className="user-avatar-badge"
-                  title={`Signed in as: ${user.name ? `${user.name} (${user.email})` : user.email} • ${user.isVerified ? 'Verified Account' : 'Email Unverified'}`}
-                  whileHover={{ scale: 1.02 }}
+                  title={`Signed in as: ${user.name ? `${user.name} (${user.email})` : user.email}`}
+                  whileHover={{ scale: 1.03, y: -1 }}
+                  whileTap={{ scale: 0.98 }}
                 >
-                  <div className="user-avatar-circle">
-                    {user.name && user.name.trim()
-                      ? user.name.trim().charAt(0).toUpperCase()
-                      : user.email
-                      ? user.email.charAt(0).toUpperCase()
-                      : <User size={12} />}
-                  </div>
+                  <motion.div
+                    className="user-avatar-circle"
+                    whileHover={{ rotate: 8, scale: 1.08 }}
+                    transition={{ type: 'spring', stiffness: 450, damping: 15 }}
+                  >
+                    <span>{getInitials(user.name, user.email)}</span>
+                  </motion.div>
                   <div className="user-identity-text">
                     <span className="user-name-label">
                       {user.name && user.name.trim() ? user.name.trim() : user.email}
@@ -143,21 +166,6 @@ export function Navbar({
                       <span className="user-email-label">{user.email}</span>
                     )}
                   </div>
-                  {!user.isVerified && (
-                    <motion.span
-                      title="Email address unverified"
-                      animate={{ scale: [1, 1.2, 1] }}
-                      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        color: '#F59E0B',
-                        marginLeft: '3px'
-                      }}
-                    >
-                      <ShieldAlert size={13} />
-                    </motion.span>
-                  )}
                 </motion.div>
 
                 <motion.button

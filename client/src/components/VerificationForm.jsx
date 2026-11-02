@@ -185,7 +185,21 @@ export function VerificationForm({
           </div>
 
           {/* Action Row */}
-          <div className="details-actions-bar" style={{ justifyContent: 'flex-end' }}>
+          <div className="details-actions-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {hasContent && !loading ? (
+              <motion.button
+                type="button"
+                className="btn-clear-details"
+                onClick={onClear}
+                whileHover={{ scale: 1.04, y: -1 }}
+                whileTap={{ scale: 0.96 }}
+                title="Reset all form inputs"
+              >
+                <RotateCcw size={14} />
+                <span>Clear Fields</span>
+              </motion.button>
+            ) : <div />}
+
             <motion.button
               type="submit"
               className="btn-verify-citation"
