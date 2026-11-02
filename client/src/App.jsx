@@ -75,10 +75,16 @@ export default function App() {
   }, []);
 
   // Fetch user personal reports from database (deduplicated)
+  // Only fetches when the user is verified — unverified users cannot access saved reports
   const isFetchingReportsRef = useRef(false);
-  const fetchReports = useCallback(async () => {
+  const fetchReports = useCallback(async (currentUser) => {
     const token = localStorage.getItem('citecheck_token');
     if (!token) {
+      setSavedReports([]);
+      return;
+    }
+    // Skip reports fetch for unverified users — backend returns 403 EMAIL_UNVERIFIED
+    if (currentUser && !currentUser.isVerified) {
       setSavedReports([]);
       return;
     }
@@ -93,10 +99,13 @@ export default function App() {
         const data = await res.json();
         setSavedReports(data.reports || []);
       } else if (res.status === 401) {
-        // Token expired or invalid
+        // Token expired or invalid — log out
         localStorage.removeItem('citecheck_token');
         localStorage.removeItem('citecheck_user');
         setUser(null);
+      } else if (res.status === 403) {
+        // Email not verified — clear reports silently (no logout)
+        setSavedReports([]);
       }
     } catch (err) {
       console.warn('Could not load user reports:', err);
@@ -169,10 +178,10 @@ export default function App() {
     handleUrlVerification();
   }, [fetchHealth, refreshUser]);
 
-  // When user state changes, refresh personal reports
+  // When user state changes, refresh personal reports (only if verified)
   useEffect(() => {
     if (user) {
-      fetchReports();
+      fetchReports(user);
     } else {
       setSavedReports([]);
     }
