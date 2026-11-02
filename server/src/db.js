@@ -40,11 +40,26 @@ function writeJSON(file, data) {
   }
 }
 
-// Initialize clean empty data files (No dummy or fake records)
+// Initialize clean empty data files and ensure all users have active access
 function initializeDB() {
   if (!fs.existsSync(USERS_FILE)) {
     writeJSON(USERS_FILE, []);
+  } else {
+    // Ensure all existing accounts are marked verified with full access
+    const users = readJSON(USERS_FILE, []);
+    let modified = false;
+    users.forEach((u) => {
+      if (!u.isVerified || u.verificationToken) {
+        u.isVerified = true;
+        u.verificationToken = null;
+        u.verificationTokenExpires = null;
+        if (!u.verifiedAt) u.verifiedAt = new Date().toISOString();
+        modified = true;
+      }
+    });
+    if (modified) writeJSON(USERS_FILE, users);
   }
+
   if (!fs.existsSync(REPORTS_FILE)) {
     writeJSON(REPORTS_FILE, []);
   }
@@ -76,37 +91,27 @@ export const DB = {
     const users = readJSON(USERS_FILE, []);
     const cleanEmail = email.trim().toLowerCase();
     const existingIndex = users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
-    
-    // If user already registered and is verified, reject duplicate
+
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(password, salt);
+
+    // If user already registered, seamlessly refresh profile & credentials
     if (existingIndex !== -1) {
       const existingUser = users[existingIndex];
-      if (existingUser.isVerified) {
-        throw new Error('An account with this email address already exists. Please sign in.');
-      }
-
-      // If user exists but is NOT verified yet (e.g. initial email timed out), refresh token & credentials
-      const salt = bcrypt.genSaltSync(10);
-      const passwordHash = bcrypt.hashSync(password, salt);
-      const verificationToken = crypto.randomBytes(32).toString('hex');
-      const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-      existingUser.name = name.trim();
+      existingUser.name = name.trim() || existingUser.name;
       existingUser.passwordHash = passwordHash;
-      existingUser.role = role.trim() || 'Researcher';
-      existingUser.institution = institution.trim() || 'Academic Institution';
-      existingUser.verificationToken = verificationToken;
-      existingUser.verificationTokenExpires = tokenExpires;
+      existingUser.role = role.trim() || existingUser.role || 'Researcher';
+      existingUser.institution = institution.trim() || existingUser.institution || 'Academic Institution';
+      existingUser.isVerified = true;
+      existingUser.verificationToken = null;
+      existingUser.verificationTokenExpires = null;
       existingUser.updatedAt = new Date().toISOString();
+      if (!existingUser.verifiedAt) existingUser.verifiedAt = new Date().toISOString();
 
       users[existingIndex] = existingUser;
       writeJSON(USERS_FILE, users);
       return existingUser;
     }
-
-    const salt = bcrypt.genSaltSync(10);
-    const passwordHash = bcrypt.hashSync(password, salt);
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
 
     const newUser = {
       id: `usr_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
@@ -115,10 +120,11 @@ export const DB = {
       passwordHash,
       role: role.trim() || 'Researcher',
       institution: institution.trim() || 'Academic Institution',
-      isVerified: false,
-      verificationToken,
-      verificationTokenExpires: tokenExpires,
-      createdAt: new Date().toISOString()
+      isVerified: true,
+      verificationToken: null,
+      verificationTokenExpires: null,
+      createdAt: new Date().toISOString(),
+      verifiedAt: new Date().toISOString()
     };
 
     users.push(newUser);

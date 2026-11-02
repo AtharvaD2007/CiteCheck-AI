@@ -67,82 +67,33 @@ async function runTests() {
 
   assert(registerRes.statusCode === 200, 'Registration succeeded with code 200');
   assert(registerRes.body.success === true, 'Registration success flag is true');
-  assert(registerRes.body.user.isVerified === false, 'New user is unverified initially');
+  assert(registerRes.body.user.isVerified === true, 'New user has immediate full access (isVerified: true)');
   assert(registerRes.body.token, 'Session token provided upon registration');
   const token = registerRes.body.token;
-  const verificationUrl = registerRes.body.emailResult?.verificationUrl;
-  console.log('  Verification URL generated:', verificationUrl);
 
-  // 3. Try to access protected features before email verification
-  console.log('\nTest 3: Verify unverified user is blocked from protected features...');
-  const blockedReportsRes = await makeRequest({
-    hostname: '127.0.0.1',
-    port: 5001,
-    path: '/api/reports',
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  assert(blockedReportsRes.statusCode === 403, 'Access to /api/reports denied with 403 Forbidden for unverified user');
-  assert(blockedReportsRes.body.emailUnverified === true, 'Response identifies emailUnverified: true');
-
-  const blockedVerifyRes = await makeRequest(
+  // 3. Re-registration / Seamless profile refresh
+  console.log('\nTest 3: Seamless re-registration with same email...');
+  const reRegisterRes = await makeRequest(
     {
       hostname: '127.0.0.1',
       port: 5001,
-      path: '/api/verify',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      }
-    },
-    {
-      claim: 'Test academic claim',
-      sourcePassage: 'This is a test source passage'
-    }
-  );
-  assert(blockedVerifyRes.statusCode === 403, 'Citation verification blocked with 403 for unverified user');
-
-  // 4. Test Resend Verification Email
-  console.log('\nTest 4: Resend verification email (/api/auth/resend-verification)...');
-  const resendRes = await makeRequest(
-    {
-      hostname: '127.0.0.1',
-      port: 5001,
-      path: '/api/auth/resend-verification',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      }
-    },
-    { email: testEmail }
-  );
-  assert(resendRes.statusCode === 200, 'Resend verification succeeded with code 200');
-  assert(resendRes.body.success === true, 'Resend verification success flag is true');
-  const newVerificationUrl = resendRes.body.emailResult?.verificationUrl;
-  console.log('  New verification URL:', newVerificationUrl);
-
-  // 5. Complete Email Verification
-  console.log('\nTest 5: Verify email using verification token...');
-  const urlObj = new URL(newVerificationUrl);
-  const verifyToken = urlObj.searchParams.get('verify_token');
-
-  const verifyEmailRes = await makeRequest(
-    {
-      hostname: '127.0.0.1',
-      port: 5001,
-      path: '/api/auth/verify-email',
+      path: '/api/auth/register',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     },
-    { token: verifyToken }
+    {
+      name: 'Dr. Jane Watson Updated',
+      email: testEmail,
+      password: testPassword,
+      role: 'Associate Professor',
+      institution: 'Cambridge University'
+    }
   );
-  assert(verifyEmailRes.statusCode === 200, 'Verify email returned code 200');
-  assert(verifyEmailRes.body.user?.isVerified === true, 'User is now verified (isVerified: true)');
+  assert(reRegisterRes.statusCode === 200, 'Re-registration succeeded without blocking');
+  assert(reRegisterRes.body.user.isVerified === true, 'User remains verified and active');
 
-  // 6. Test Login
-  console.log('\nTest 6: Test Login with verified credentials...');
+  // 4. Test Login
+  console.log('\nTest 4: Test Login with credentials...');
   const loginRes = await makeRequest(
     {
       hostname: '127.0.0.1',

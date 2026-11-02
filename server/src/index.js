@@ -40,15 +40,8 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// Middleware: Require verified academic email address
+// Middleware: Verified status (Verification requirement removed - all authenticated users have access)
 function requireVerified(req, res, next) {
-  if (!req.user || !req.user.isVerified) {
-    return res.status(403).json({
-      error: "Please verify your academic email address before accessing this feature.",
-      emailUnverified: true,
-      email: req.user?.email
-    });
-  }
   next();
 }
 
@@ -67,14 +60,14 @@ app.get("/api/health", (req, res) => {
     version: "2.0.0",
     hasApiKey: isKeyConfigured,
     model: GEMINI_MODEL,
-    hasEmailService: Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS),
+    hasEmailService: false,
     timestamp: new Date().toISOString()
   });
 });
 
 // ================= AUTHENTICATION ENDPOINTS =================
 
-// Register new user and send email verification
+// Register new user (Instant access, verification requirement removed)
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { name, email, password, role, institution } = req.body;
@@ -97,37 +90,11 @@ app.post("/api/auth/register", async (req, res) => {
     const token = DB.createSession(newUser.id);
     const safeUser = DB.sanitizeUser(newUser);
 
-    // Send verification email with automatic baseUrl detection and fast timeout
-    const clientBaseUrl = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
-    let emailResult = { sent: false, simulated: false, verificationUrl: null };
-
-    try {
-      emailResult = await sendVerificationEmail({
-        to: newUser.email,
-        name: newUser.name,
-        verificationToken: newUser.verificationToken,
-        baseUrl: clientBaseUrl,
-      });
-    } catch (mailErr) {
-      console.warn("[CiteCheck AI] Verification email dispatch notice:", mailErr.message);
-      const appUrl = (process.env.APP_URL || clientBaseUrl || "http://localhost:5173").replace(/\/$/, "");
-      emailResult = {
-        sent: false,
-        error: mailErr.message,
-        verificationUrl: `${appUrl}/?verify_token=${newUser.verificationToken}`,
-      };
-    }
-
     res.json({
       success: true,
-      message: "Registration successful. Please check your email to verify your account.",
+      message: "Registration successful! Welcome to CiteCheck AI.",
       user: safeUser,
       token,
-      emailResult: {
-        sent: emailResult.sent,
-        simulated: emailResult.simulated,
-        verificationUrl: emailResult.verificationUrl,
-      }
     });
   } catch (err) {
     res.status(400).json({ error: err.message });

@@ -97,10 +97,11 @@
     "passwordHash": "$2b$10$blwUScXNp3sG5boWBZR0reftkRWNxZF2X1w4ciScbNk9sov1tq5Sa",
     "role": "Researcher",
     "institution": "Academic Institution",
-    "isVerified": false,
-    "verificationToken": "1f29be2aa67a0c4955795e696f5bbfb85a4c3bd23bee7dd578d298ab02b452c9",
-    "verificationTokenExpires": "2026-11-02T17:23:48.850Z",
-    "createdAt": "2026-11-01T17:23:48.850Z"
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": null,
+    "createdAt": "2026-11-01T17:23:48.850Z",
+    "verifiedAt": "2026-11-02T03:44:15.415Z"
   },
   {
     "id": "usr_1793553992879_b619f29c",
@@ -109,10 +110,11 @@
     "passwordHash": "$2b$10$6kF.1roMVM5utQe6mvBDQOgcfMqsZ0F6M0vdqMce/jrCXc5A.N3fi",
     "role": "Researcher",
     "institution": "Academic Institution",
-    "isVerified": false,
-    "verificationToken": "9a720951481356f404f8c0ab7f5181bb87302f003ccb7e52c37de9992b4485af",
-    "verificationTokenExpires": "2026-11-02T17:26:32.879Z",
-    "createdAt": "2026-11-01T17:26:32.879Z"
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": null,
+    "createdAt": "2026-11-01T17:26:32.879Z",
+    "verifiedAt": "2026-11-02T03:44:15.420Z"
   },
   {
     "id": "usr_1793554180871_d48d361f",
@@ -217,5 +219,46 @@
     "verificationTokenExpires": null,
     "createdAt": "2026-11-01T18:21:24.717Z",
     "verifiedAt": "2026-11-01T18:21:30.190Z"
+  },
+  {
+    "id": "usr_1793560065760_df677f5d",
+    "name": "Dr. Jane Watson",
+    "email": "scholar_1793560065700@cambridge.ac.uk",
+    "passwordHash": "$2b$10$bGjLQS0s3eSkjsOaJ1H8IuB3NuxCvgp6e4E6xot06dgTu2jMSa0wO",
+    "role": "Postdoctoral Fellow",
+    "institution": "Cambridge University",
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": null,
+    "createdAt": "2026-11-01T19:07:45.760Z",
+    "verifiedAt": "2026-11-01T19:07:51.202Z"
+  },
+  {
+    "id": "usr_1793560088617_d9456cae",
+    "name": "Dr. Oxford Updated",
+    "email": "unverified_test_1793560088541@oxford.ac.uk",
+    "passwordHash": "$2b$10$BzsetD/y2JZOvT48kVXPIufe.2DT0qwDqE6o2y0MXduCjO7PvfJmG",
+    "role": "Researcher",
+    "institution": "Academic Institution",
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": null,
+    "createdAt": "2026-11-01T19:08:08.617Z",
+    "updatedAt": "2026-11-01T19:08:11.253Z",
+    "verifiedAt": "2026-11-01T19:08:14.228Z"
+  },
+  {
+    "id": "usr_1793591587789_c103b362",
+    "name": "Dr. Jane Watson Updated",
+    "email": "scholar_1793591587729@cambridge.ac.uk",
+    "passwordHash": "$2b$10$V9AxTQCNeqfU0FO2VsRgpOVIEpsN1uqi6wI/7ue0uCfFyApX9ioFu",
+    "role": "Associate Professor",
+    "institution": "Cambridge University",
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": null,
+    "createdAt": "2026-11-02T03:53:07.789Z",
+    "verifiedAt": "2026-11-02T03:53:07.789Z",
+    "updatedAt": "2026-11-02T03:53:07.841Z"
   }
 ]

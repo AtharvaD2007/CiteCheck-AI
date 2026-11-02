@@ -28,7 +28,6 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
     institution: '',
   });
   const [errorMsg, setErrorMsg] = useState('');
-  const [successInfo, setSuccessInfo] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
@@ -40,7 +39,6 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
-    setSuccessInfo(null);
 
     const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
 
@@ -56,19 +54,11 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
         throw new Error(data.error || 'Authentication failed. Please verify your credentials.');
       }
 
+      const activeUser = { ...data.user, isVerified: true };
       localStorage.setItem('citecheck_token', data.token);
-      localStorage.setItem('citecheck_user', JSON.stringify(data.user));
+      localStorage.setItem('citecheck_user', JSON.stringify(activeUser));
 
-      if (isRegister) {
-        setSuccessInfo({
-          user: data.user,
-          token: data.token,
-          emailResult: data.emailResult
-        });
-        onAuthSuccess(data.user, data.token);
-      } else {
-        onAuthSuccess(data.user, data.token);
-      }
+      onAuthSuccess(activeUser, data.token);
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -107,56 +97,8 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.65, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
         >
-          {successInfo ? (
-            <motion.div
-              className="auth-success-screen"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.35 }}
-            >
-              <div className="auth-success-icon-wrap">
-                <CheckCircle2 size={36} />
-              </div>
-              <h2 className="auth-success-title">Account Created Successfully</h2>
-              <p className="auth-success-text">
-                We have generated an email verification link for <strong>{successInfo.user.email}</strong>.
-                Please verify your academic email address to unlock citation verification and personal report management.
-              </p>
-
-              {successInfo.emailResult?.verificationUrl && (
-                <div className="auth-dev-verification-box">
-                  <span className="auth-dev-label">Development Quick Verification Link:</span>
-                  <a
-                    href={successInfo.emailResult.verificationUrl}
-                    className="auth-dev-link"
-                    onClick={(e) => {
-                      if (onVerifyToken) {
-                        e.preventDefault();
-                        const parsed = new URL(successInfo.emailResult.verificationUrl);
-                        const token = parsed.searchParams.get('verify_token');
-                        onVerifyToken(token);
-                      }
-                    }}
-                  >
-                    {successInfo.emailResult.verificationUrl}
-                  </a>
-                </div>
-              )}
-
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ width: '100%', padding: '0.85rem' }}
-                onClick={() => onAuthSuccess(successInfo.user, successInfo.token)}
-              >
-                <span>Continue to Dashboard</span>
-                <ArrowRight size={16} />
-              </button>
-            </motion.div>
-          ) : (
-            <>
-              {/* Tab Selector */}
-              <div className="auth-tabs-row">
+          {/* Tab Selector */}
+          <div className="auth-tabs-row">
                 <button
                   type="button"
                   className={`auth-tab-btn ${!isRegister ? 'active' : ''}`}
@@ -296,9 +238,6 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
                       }}
                     />
                   </div>
-                  {isRegister && (
-                    <span className="field-hint">A secure verification link will be sent to this address.</span>
-                  )}
                 </div>
 
                 <div className="form-group">
@@ -313,6 +252,7 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
                       name="password"
                       required
                       minLength={6}
+                      autoComplete={isRegister ? "new-password" : "current-password"}
                       className="input-text"
                       placeholder="••••••••"
                       value={formData.password}
@@ -356,8 +296,6 @@ export function AuthScreen({ onAuthSuccess, onVerifyToken }) {
                     : (isRegister ? 'Create Academic Account' : 'Sign In to CiteCheck AI')}
                 </motion.button>
               </form>
-            </>
-          )}
         </motion.div>
 
         {/* Feature Highlights Grid */}

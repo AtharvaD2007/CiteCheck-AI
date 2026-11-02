@@ -23,7 +23,6 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
     institution: '',
   });
   const [errorMsg, setErrorMsg] = useState('');
-  const [successInfo, setSuccessInfo] = useState(null);
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
@@ -35,7 +34,6 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
 
   const handleModalClose = () => {
     setErrorMsg('');
-    setSuccessInfo(null);
     onClose();
   };
 
@@ -43,7 +41,6 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
-    setSuccessInfo(null);
 
     const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
 
@@ -59,20 +56,12 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
         throw new Error(data.error || 'Authentication failed. Please check your credentials.');
       }
 
+      const activeUser = { ...data.user, isVerified: true };
       localStorage.setItem('citecheck_token', data.token);
-      localStorage.setItem('citecheck_user', JSON.stringify(data.user));
+      localStorage.setItem('citecheck_user', JSON.stringify(activeUser));
 
-      if (isRegister) {
-        setSuccessInfo({
-          user: data.user,
-          token: data.token,
-          emailResult: data.emailResult
-        });
-        onAuthSuccess(data.user, data.token);
-      } else {
-        onAuthSuccess(data.user, data.token);
-        handleModalClose();
-      }
+      onAuthSuccess(activeUser, data.token);
+      handleModalClose();
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -109,87 +98,15 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
         </div>
 
         <div className="modal-body">
-          {successInfo ? (
-            <motion.div
-              style={{ textAlign: 'center', padding: '1.25rem 0.5rem' }}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.35 }}
-            >
-              <motion.div
-                style={{
-                  width: '60px',
-                  height: '60px',
-                  borderRadius: '50%',
-                  background: 'var(--status-supported-bg)',
-                  color: 'var(--status-supported-accent)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 1.1rem',
-                }}
-                initial={{ scale: 0, rotate: -30 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 20 }}
-              >
-                <CheckCircle2 size={34} />
-              </motion.div>
-
-              <h3 style={{ fontSize: '1.3rem', color: 'var(--slate-900)', fontWeight: 800, marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>
-                Account Created Successfully!
-              </h3>
-
-              <p style={{ fontSize: '0.9rem', color: 'var(--slate-600)', lineHeight: 1.55, marginBottom: '1.25rem' }}>
-                We have sent an email verification link to <strong>{successInfo.user.email}</strong>.
-                Please verify your email address to unlock citation verification and personal report management.
-              </p>
-
-              {successInfo.emailResult?.verificationUrl && (
-                <div
-                  style={{
-                    background: 'var(--lavender-subtle)',
-                    border: '1px solid var(--lavender-border)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '0.9rem',
-                    marginBottom: '1.25rem',
-                    textAlign: 'left',
-                    fontSize: '0.82rem',
-                  }}
-                >
-                  <span style={{ fontWeight: 600, color: 'var(--lavender-primary)', display: 'block', marginBottom: '0.3rem' }}>
-                    Quick Local Verification Link:
-                  </span>
-                  <a
-                    href={successInfo.emailResult.verificationUrl}
-                    style={{ color: 'var(--slate-900)', wordBreak: 'break-all', textDecoration: 'underline' }}
-                  >
-                    {successInfo.emailResult.verificationUrl}
-                  </a>
-                </div>
-              )}
-
-              <motion.button
-                type="button"
-                className="btn btn-primary"
-                style={{ width: '100%', padding: '0.75rem' }}
-                onClick={handleModalClose}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                Continue to CiteCheck AI
-              </motion.button>
-            </motion.div>
-          ) : (
-            <>
-              {/* Sliding Tab Switcher with layoutId */}
-              <div
-                style={{
-                  display: 'flex',
-                  position: 'relative',
-                  borderBottom: '1px solid var(--border-color)',
-                  marginBottom: '1.5rem',
-                }}
-              >
+          {/* Sliding Tab Switcher with layoutId */}
+          <div
+            style={{
+              display: 'flex',
+              position: 'relative',
+              borderBottom: '1px solid var(--border-color)',
+              marginBottom: '1.5rem',
+            }}
+          >
                 <button
                   type="button"
                   style={{
@@ -442,8 +359,6 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode = 'login
                   </motion.button>
                 </div>
               </form>
-            </>
-          )}
         </div>
       </motion.div>
     </div>
