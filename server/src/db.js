@@ -1,99 +1,12 @@
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
-import { fileURLToPath } from 'url';
 import { User } from './models/User.js';
 import { Report } from './models/Report.js';
 import { Session } from './models/Session.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, '../data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const REPORTS_FILE = path.join(DATA_DIR, 'reports.json');
-
 // In-memory cache for fast session token lookup
 const memorySessionCache = new Map();
-
-// Helper to read JSON safely
-function readJSON(file, fallback = []) {
-  try {
-    if (fs.existsSync(file)) {
-      const data = fs.readFileSync(file, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error(`[File DB] Error reading ${file}:`, err.message);
-  }
-  return fallback;
-}
-
-// Safely migrate existing JSON file data into MongoDB Atlas
-async function migrateFromJSONFiles() {
-  try {
-    let migratedUsers = 0;
-    let migratedReports = 0;
-
-    // 1. Migrate Users
-    if (fs.existsSync(USERS_FILE)) {
-      const usersData = readJSON(USERS_FILE, []);
-      for (const u of usersData) {
-        if (!u || !u.email) continue;
-        const cleanEmail = u.email.trim().toLowerCase();
-        const existing = await User.findOne({
-          $or: [{ id: u.id }, { email: cleanEmail }]
-        }).lean();
-
-        if (!existing) {
-          await User.create({
-            id: u.id || `usr_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-            name: (u.name || 'Scholar').trim(),
-            email: cleanEmail,
-            passwordHash: u.passwordHash,
-            role: u.role || 'Researcher',
-            institution: u.institution || 'Academic Institution',
-            isVerified: u.isVerified !== undefined ? u.isVerified : true,
-            verificationToken: u.verificationToken || null,
-            verificationTokenExpires: u.verificationTokenExpires ? new Date(u.verificationTokenExpires) : null,
-            createdAt: u.createdAt ? new Date(u.createdAt) : new Date(),
-            verifiedAt: u.verifiedAt ? new Date(u.verifiedAt) : new Date()
-          });
-          migratedUsers++;
-        }
-      }
-    }
-
-    // 2. Migrate Reports
-    if (fs.existsSync(REPORTS_FILE)) {
-      const reportsData = readJSON(REPORTS_FILE, []);
-      for (const r of reportsData) {
-        if (!r || !r.id || !r.userId) continue;
-        const existing = await Report.findOne({ id: r.id }).lean();
-        if (!existing) {
-          await Report.create({
-            id: r.id,
-            userId: r.userId,
-            title: r.title || 'Academic Verification Report',
-            input: r.input || {},
-            report: r.report || {},
-            createdAt: r.createdAt ? new Date(r.createdAt) : new Date()
-          });
-          migratedReports++;
-        }
-      }
-    }
-
-    if (migratedUsers > 0 || migratedReports > 0) {
-      console.log(`[MongoDB Migration] Successfully migrated ${migratedUsers} user(s) and ${migratedReports} report(s) from JSON files to MongoDB.`);
-    } else {
-      console.log('[MongoDB Migration] Existing records verified. MongoDB database is up to date.');
-    }
-  } catch (err) {
-    console.warn('[MongoDB Migration Warning] File migration notice:', err.message);
-  }
-}
 
 // Connect to MongoDB Atlas
 export async function connectDB() {
@@ -124,9 +37,6 @@ export async function connectDB() {
     });
 
     console.log(`[MongoDB] Connected successfully to ${mongoose.connection.name} (${mongoose.connection.host})`);
-
-    // Run one-time safe migration from existing JSON files
-    await migrateFromJSONFiles();
   } catch (err) {
     console.error(`[MongoDB Connection Failed] ${err.message}`);
     console.warn('[MongoDB] Please check your MONGODB_URI in server/.env.');
