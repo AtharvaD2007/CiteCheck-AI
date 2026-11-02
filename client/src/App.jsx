@@ -239,8 +239,8 @@ export default function App() {
           localStorage.removeItem('citecheck_user');
           throw new Error('Your session has expired. Please sign in again.');
         }
-        if (res.status === 403 && data.emailUnverified) {
-          throw new Error('Please verify your academic email address before verifying citations.');
+        if (res.status === 403 && (data.code === 'EMAIL_UNVERIFIED' || data.emailUnverified)) {
+          throw new Error('Academic email verification required. Please click the verification link sent to your inbox.');
         }
         throw new Error(data.error || 'Failed to verify citation.');
       }

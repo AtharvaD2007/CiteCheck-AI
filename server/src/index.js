@@ -93,7 +93,7 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ error: "Password must be at least 6 characters long." });
     }
 
-    const newUser = DB.createUser({ name, email, password, role, institution });
+    const newUser = await DB.createUser({ name, email, password, role, institution });
     const token = DB.createSession(newUser.id);
     const safeUser = DB.sanitizeUser(newUser);
 
@@ -131,14 +131,14 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 // Login
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: "Please provide both email and password." });
     }
 
-    const user = DB.verifyCredentials(email, password);
+    const user = await DB.verifyCredentials(email, password);
     if (!user) {
       return res.status(401).json({ error: "Invalid email or password." });
     }

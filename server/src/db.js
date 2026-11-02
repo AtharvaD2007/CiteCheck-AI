@@ -40,24 +40,10 @@ function writeJSON(file, data) {
   }
 }
 
-// Initialize clean empty data files and ensure all users have active access
+// Initialize clean empty data files — do NOT alter verification state of existing users
 function initializeDB() {
   if (!fs.existsSync(USERS_FILE)) {
     writeJSON(USERS_FILE, []);
-  } else {
-    // Ensure all existing accounts are marked verified with full access
-    const users = readJSON(USERS_FILE, []);
-    let modified = false;
-    users.forEach((u) => {
-      if (!u.isVerified || u.verificationToken) {
-        u.isVerified = true;
-        u.verificationToken = null;
-        u.verificationTokenExpires = null;
-        if (!u.verifiedAt) u.verifiedAt = new Date().toISOString();
-        modified = true;
-      }
-    });
-    if (modified) writeJSON(USERS_FILE, users);
   }
 
   if (!fs.existsSync(REPORTS_FILE)) {
@@ -87,7 +73,7 @@ export const DB = {
     return users.find((u) => u.verificationToken === token) || null;
   },
 
-  createUser({ name, email, password, role = 'Researcher', institution = 'Academic Institution' }) {
+  async createUser({ name, email, password, role = 'Researcher', institution = 'Academic Institution' }) {
     const users = readJSON(USERS_FILE, []);
     const cleanEmail = email.trim().toLowerCase();
     const existingIndex = users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
@@ -96,8 +82,8 @@ export const DB = {
       throw new Error('An account with this email address already exists. Please sign in instead.');
     }
 
-    const salt = bcrypt.genSaltSync(10);
-    const passwordHash = bcrypt.hashSync(password, salt);
+    // Use async bcrypt to avoid blocking the event loop on Render's CPU-throttled container
+    const passwordHash = await bcrypt.hash(password, 10);
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -171,10 +157,10 @@ export const DB = {
     return { user, verificationToken };
   },
 
-  verifyCredentials(email, password) {
+  async verifyCredentials(email, password) {
     const user = this.findUserByEmail(email);
     if (!user) return null;
-    const isValid = bcrypt.compareSync(password, user.passwordHash);
+    const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) return null;
     return user;
   },
