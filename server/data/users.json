@@ -260,5 +260,57 @@
     "createdAt": "2026-11-02T03:53:07.789Z",
     "verifiedAt": "2026-11-02T03:53:07.789Z",
     "updatedAt": "2026-11-02T03:53:07.841Z"
+  },
+  {
+    "id": "usr_1793594620740_c471a06d",
+    "name": "Quick Test",
+    "email": "quicktest_new_456@uni.edu",
+    "passwordHash": "$2b$10$/WoJCq4Nzsh/lZJNGbgzAe8cZW4Ho/lzSf8trFYGV6GelU6U2XTQa",
+    "role": "Researcher",
+    "institution": "Test Uni",
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": "2026-11-03T04:43:40.740Z",
+    "createdAt": "2026-11-02T04:43:40.740Z",
+    "verifiedAt": null
+  },
+  {
+    "id": "usr_1793594943675_6ddff763",
+    "name": "Worker Test",
+    "email": "workertest_001@uni.edu",
+    "passwordHash": "$2b$10$Dvrpw6Ibj6jgvdLSx72eZ.hl/LeItSJNoYH0TLG6M91uVdgQtuBY6",
+    "role": "Researcher",
+    "institution": "MIT",
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": "2026-11-03T04:49:03.675Z",
+    "createdAt": "2026-11-02T04:49:03.675Z",
+    "verifiedAt": null
+  },
+  {
+    "id": "usr_1793596470347_96eae3af",
+    "name": "Dr. Jane Watson",
+    "email": "scholar_1793596470325@cambridge.ac.uk",
+    "passwordHash": "$2b$08$RnkdRZCSGVt9VXTvO5V4wOO8xS.LVbMhcFwOxXi/gtcu6dw0kNulK",
+    "role": "Postdoctoral Fellow",
+    "institution": "Cambridge University",
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": null,
+    "createdAt": "2026-11-02T05:14:30.347Z",
+    "verifiedAt": "2026-11-02T05:14:30.347Z"
+  },
+  {
+    "id": "usr_1793596533027_7551b9e3",
+    "name": "Fast User",
+    "email": "instant_1793596533@university.edu",
+    "passwordHash": "$2b$08$ElgIMDh4hj2p2sK2rxQcGu.zbfgmTROdzthCdgGoo4eEJiqHwEOau",
+    "role": "Faculty",
+    "institution": "Harvard",
+    "isVerified": true,
+    "verificationToken": null,
+    "verificationTokenExpires": null,
+    "createdAt": "2026-11-02T05:15:33.027Z",
+    "verifiedAt": "2026-11-02T05:15:33.027Z"
   }
 ]
